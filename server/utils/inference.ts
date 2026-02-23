@@ -29,10 +29,30 @@ import { logFull } from '~/server/utils/logger'
 import { MBTI_TYPES, ENNEAGRAM_TYPES } from '~/types/mindtrace'
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000
-const MAX_QUESTION_REGENERATIONS = 2
+const DEFAULT_MAX_QUESTION_REGENERATIONS = 2
 
 interface InferenceRequestOptions {
   requestId?: string
+  maxRegenerations?: number
+  promptBudget?: {
+    recentQuestions: number
+    recentAnswers: number
+  }
+}
+
+export interface AdaptiveQuestionGenerationMeta {
+  retryCount: number
+  usedFallback: boolean
+  filterLatencyMs: number
+  promptChars: number
+  historyLength: number
+  recentQuestionCount: number
+  allowIncongruence: boolean
+}
+
+export interface AdaptiveQuestionGenerationResult {
+  question: Question
+  meta: AdaptiveQuestionGenerationMeta
 }
 
 const distributionSummary = (distribution: DistributionState) => ({
@@ -41,6 +61,14 @@ const distributionSummary = (distribution: DistributionState) => ({
   enneagramTop3: getTopCandidates(distribution.enneagramProbs9, 3),
   conflicts: distribution.conflicts
 })
+
+const summarizeRecentAnswers = (session: SessionState, count: number) => {
+  return session.answers.slice(-count).map(answer => ({
+    questionId: answer.questionId,
+    answer: answer.answer,
+    axes: answer.targets.mbtiAxes
+  }))
+}
 
 const nextQuestionSchema = {
   type: 'object',
@@ -190,17 +218,21 @@ const normalizeProbMap = <T extends string>(values: Record<T, number>, allowed: 
   ) as Record<T, number>
 }
 
-export const generateAdaptiveQuestion = async (
+export const generateAdaptiveQuestionDetailed = async (
   session: SessionState,
   options: InferenceRequestOptions = {}
-): Promise<Question> => {
+): Promise<AdaptiveQuestionGenerationResult> => {
   const allowIncongruence = shouldUseIncongruenceFollowup(session)
+  const maxRegenerations = Math.max(0, options.maxRegenerations ?? DEFAULT_MAX_QUESTION_REGENERATIONS)
+  const recentQuestionCount = Math.min(options.promptBudget?.recentQuestions ?? 6, 8)
+  const recentAnswerCount = Math.min(options.promptBudget?.recentAnswers ?? 3, 4)
   const fallback = ensureQuestionScoring(
     getCuratedFallbackQuestion(session, { allowIncongruence })
   )
   const uncertainAxis: MbtiAxis = getMostUncertainAxis(session.distribution)
-  const recentQuestions = session.questionHistory.slice(-8)
+  const recentQuestions = session.questionHistory.slice(-recentQuestionCount)
   const recentQuestionTexts = recentQuestions.map(question => question.text_ko)
+  const recentAnswers = summarizeRecentAnswers(session, recentAnswerCount)
 
   const system = [
     'You generate one Korean yes/no scenario question for personality inference.',
@@ -222,13 +254,15 @@ export const generateAdaptiveQuestion = async (
   ].join(' ')
 
   const previousFailures: string[] = []
+  let filterLatencyMs = 0
 
-  for (let attempt = 0; attempt <= MAX_QUESTION_REGENERATIONS; attempt += 1) {
+  for (let attempt = 0; attempt <= maxRegenerations; attempt += 1) {
     const user = [
       `Current uncertainty axis: ${uncertainAxis}`,
       `Conflict signals: ${session.distribution.conflicts.join(' | ') || 'none'}`,
-      `Top MBTI: ${JSON.stringify(getTopCandidates(session.distribution.mbtiProbs16, 3))}`,
-      `Top Enneagram: ${JSON.stringify(getTopCandidates(session.distribution.enneagramProbs9, 3))}`,
+      `Top MBTI: ${JSON.stringify(getTopCandidates(session.distribution.mbtiProbs16, 2))}`,
+      `Top Enneagram: ${JSON.stringify(getTopCandidates(session.distribution.enneagramProbs9, 2))}`,
+      `Recent answers summary: ${JSON.stringify(recentAnswers)}`,
       `Recent questions (avoid overlap): ${JSON.stringify(recentQuestionTexts)}`,
       `Question mode: ${allowIncongruence ? 'single_dimension_or_incongruence' : 'single_dimension_only'}`,
       previousFailures.length > 0
@@ -247,7 +281,12 @@ export const generateAdaptiveQuestion = async (
       user,
       schema: nextQuestionSchema,
       requestId: options.requestId,
-      fallback: () => fallback
+      fallback: () => fallback,
+      promptMeta: {
+        historyLength: session.answers.length,
+        recentQuestionCount: recentQuestions.length,
+        recentAnswerCount: recentAnswers.length
+      }
     })
 
     const ensured = ensureQuestionScoring({
@@ -255,9 +294,11 @@ export const generateAdaptiveQuestion = async (
       id: modelQuestion.id || fallback.id
     })
 
+    const filterStarted = Date.now()
     const quality = validateGeneratedQuestionQuality(ensured, recentQuestions, {
       allowIncongruence
     })
+    filterLatencyMs += Date.now() - filterStarted
 
     if (quality.valid) {
       logFull('question.filter.pass', {
@@ -266,7 +307,19 @@ export const generateAdaptiveQuestion = async (
         questionId: ensured.id,
         text: ensured.text_ko
       })
-      return ensured
+
+      return {
+        question: ensured,
+        meta: {
+          retryCount: attempt,
+          usedFallback: false,
+          filterLatencyMs,
+          promptChars: system.length + user.length,
+          historyLength: session.answers.length,
+          recentQuestionCount: recentQuestions.length,
+          allowIncongruence
+        }
+      }
     }
 
     previousFailures.push(`attempt_${attempt}: ${quality.reasons.join(', ')}`)
@@ -289,7 +342,7 @@ export const generateAdaptiveQuestion = async (
       })
     }
 
-    if (attempt < MAX_QUESTION_REGENERATIONS) {
+    if (attempt < maxRegenerations) {
       logFull('question.filter.retry', {
         requestId: options.requestId || 'n/a',
         attemptFrom: attempt,
@@ -301,13 +354,32 @@ export const generateAdaptiveQuestion = async (
 
   logFull('question.filter.fallback', {
     requestId: options.requestId || 'n/a',
-    regenerationCount: MAX_QUESTION_REGENERATIONS,
+    regenerationCount: maxRegenerations,
     fallbackQuestionId: fallback.id,
     fallbackText: fallback.text_ko,
     reasonSummary: previousFailures
   })
 
-  return fallback
+  return {
+    question: fallback,
+    meta: {
+      retryCount: maxRegenerations,
+      usedFallback: true,
+      filterLatencyMs,
+      promptChars: 0,
+      historyLength: session.answers.length,
+      recentQuestionCount: recentQuestions.length,
+      allowIncongruence
+    }
+  }
+}
+
+export const generateAdaptiveQuestion = async (
+  session: SessionState,
+  options: InferenceRequestOptions = {}
+): Promise<Question> => {
+  const generated = await generateAdaptiveQuestionDetailed(session, options)
+  return generated.question
 }
 
 export const requestDistributionUpdate = async (
@@ -317,6 +389,8 @@ export const requestDistributionUpdate = async (
   options: InferenceRequestOptions = {}
 ): Promise<UpdateModelOutput | null> => {
   const dist = session.distribution
+  const recentAnswerCount = Math.min(options.promptBudget?.recentAnswers ?? 3, 4)
+  const recentAnswers = summarizeRecentAnswers(session, recentAnswerCount)
 
   const system = [
     'You are calibrating MBTI16 and Enneagram9 posterior distributions.',
@@ -329,6 +403,7 @@ export const requestDistributionUpdate = async (
     `Targets: ${JSON.stringify(question.targets)}`,
     `Scoring reference: ${JSON.stringify(question.scoring || {})}`,
     `Answer: ${answer}`,
+    `Recent answers summary: ${JSON.stringify(recentAnswers)}`,
     `Current distribution summary: ${JSON.stringify(distributionSummary(dist))}`,
     'Return JSON with mbtiProbs16(16 types), enneagramProbs9(types 1-9), conflicts(list).',
     'Probabilities must each sum to 1.0 approximately.'
@@ -340,7 +415,12 @@ export const requestDistributionUpdate = async (
     user,
     schema: updateSchema,
     requestId: options.requestId,
-    fallback: () => defaultModelUpdate(dist)
+    fallback: () => defaultModelUpdate(dist),
+    promptMeta: {
+      historyLength: session.answers.length,
+      recentAnswerCount: recentAnswers.length,
+      promptChars: system.length + user.length
+    }
   })
 
   return {

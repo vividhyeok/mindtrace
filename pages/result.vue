@@ -11,6 +11,7 @@ const loading = ref(true)
 const exporting = ref(false)
 const report = ref<FinalReport | null>(null)
 const errorMessage = ref('')
+const loadingLabel = ref('결과를 불러오는 중...')
 const ratio = ref<'story' | 'square'>('story')
 const shareCardRef = ref<{ rootEl: HTMLElement | null } | null>(null)
 const copied = ref(false)
@@ -37,12 +38,14 @@ const loadResult = async () => {
   }
 
   try {
+    loadingLabel.value = '저장된 결과를 확인하는 중...'
     const fromApi = await api.get<FinalReport>(`/api/result/${sid}`)
     report.value = fromApi
     clientSession.saveReport(sid, fromApi)
   }
   catch {
     try {
+      loadingLabel.value = '결과 정리 중...'
       const finalized = await api.post<FinalReport>('/api/finalize', { sessionId: sid })
       report.value = finalized
       clientSession.saveReport(sid, finalized)
@@ -99,6 +102,7 @@ const retryLoad = async () => {
   errorMessage.value = ''
   report.value = null
   loading.value = true
+  loadingLabel.value = '결과를 다시 불러오는 중...'
   await loadResult()
 }
 
@@ -111,7 +115,10 @@ onMounted(async () => {
   <main class="mx-auto max-w-5xl">
     <section class="soft-card p-6 sm:p-8">
       <div v-if="loading" class="py-20 text-center">
-        <p class="text-base font-bold">결과를 불러오는 중...</p>
+        <div class="inline-flex items-center gap-3 text-sm font-bold text-ink/80">
+          <span class="h-5 w-5 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />
+          {{ loadingLabel }}
+        </div>
       </div>
 
       <div v-else-if="report" class="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -169,20 +176,22 @@ onMounted(async () => {
           <div class="rounded-3xl bg-white/90 p-4">
             <h2 class="mb-3 text-sm font-extrabold">공유 카드</h2>
             <div class="mb-4 flex gap-2">
-              <button
-                class="soft-button-ghost flex-1"
+              <BaseButton
+                variant="ghost"
+                class="flex-1"
                 :class="ratio === 'story' ? 'bg-peach' : ''"
                 @click="ratio = 'story'"
               >
                 9:16 스토리
-              </button>
-              <button
-                class="soft-button-ghost flex-1"
+              </BaseButton>
+              <BaseButton
+                variant="ghost"
+                class="flex-1"
                 :class="ratio === 'square' ? 'bg-mint' : ''"
                 @click="ratio = 'square'"
               >
                 1:1 피드
-              </button>
+              </BaseButton>
             </div>
 
             <div class="flex justify-center rounded-3xl bg-lilac/50 p-4">
@@ -194,13 +203,17 @@ onMounted(async () => {
             </div>
 
             <div class="mt-4 grid grid-cols-1 gap-2">
-              <button class="soft-button-primary" :disabled="exporting" @click="downloadImage">
-                {{ exporting ? '이미지 생성 중...' : 'Export Image' }}
-              </button>
-              <button class="soft-button-secondary" @click="copyCaption">
+              <BaseButton :disabled="exporting" @click="downloadImage">
+                <span v-if="exporting" class="inline-flex items-center gap-2">
+                  <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white" />
+                  이미지 생성 중...
+                </span>
+                <span v-else>Export Image</span>
+              </BaseButton>
+              <BaseButton variant="secondary" @click="copyCaption">
                 {{ copied ? '복사 완료!' : 'Copy caption' }}
-              </button>
-              <button class="soft-button-ghost" @click="restart">다시 테스트하기</button>
+              </BaseButton>
+              <BaseButton variant="ghost" @click="restart">다시 테스트하기</BaseButton>
             </div>
           </div>
         </aside>
@@ -208,9 +221,9 @@ onMounted(async () => {
 
       <div v-else class="rounded-3xl bg-[#ffe0ec] px-4 py-4 text-sm font-bold text-[#b93b64]">
         <p>{{ errorMessage || '앗, 결과를 잠깐 불러오지 못했어요.' }}</p>
-        <button class="soft-button-ghost mt-3 w-full sm:w-auto" @click="retryLoad">
+        <BaseButton variant="ghost" class="mt-3 w-full sm:w-auto" @click="retryLoad">
           다시 불러오기
-        </button>
+        </BaseButton>
       </div>
     </section>
   </main>

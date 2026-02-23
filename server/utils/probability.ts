@@ -7,6 +7,8 @@ import {
   type MbtiAxis,
   type MbtiType,
   type Question,
+  type StopCheckDecision,
+  type StopSnapshot,
   type TypeCandidate,
   type UpdateModelOutput,
   type YesNo
@@ -214,35 +216,136 @@ export const blendWithModelUpdate = (
   return distribution
 }
 
-export const shouldStop = (
-  distribution: DistributionState,
-  answerCount: number,
-  maxQuestions: number
-): { done: boolean, reason: 'threshold' | 'cap' | 'continue' } => {
-  if (answerCount >= maxQuestions) {
-    return { done: true, reason: 'cap' }
-  }
+const variation = (values: number[]) => {
+  if (values.length === 0) return 0
+  return Math.max(...values) - Math.min(...values)
+}
 
+const buildStopSnapshot = (distribution: DistributionState): StopSnapshot => {
   const [mbtiTop1, mbtiTop2] = getTopCandidates(distribution.mbtiProbs16, 2)
   const [enneaTop1, enneaTop2] = getTopCandidates(distribution.enneagramProbs9, 2)
 
-  const mbtiConfident =
-    !!mbtiTop1
-    && !!mbtiTop2
-    && mbtiTop1.p >= EARLY_STOP.mbtiTop1
-    && mbtiTop1.p - mbtiTop2.p >= EARLY_STOP.mbtiGap
+  return {
+    mbtiTop: (mbtiTop1?.type || 'INFP') as MbtiType,
+    mbtiTopProb: mbtiTop1?.p || 0,
+    mbtiGap: Math.max(0, (mbtiTop1?.p || 0) - (mbtiTop2?.p || 0)),
+    enneaTop: enneaTop1?.type || '5',
+    enneaTopProb: enneaTop1?.p || 0,
+    enneaGap: Math.max(0, (enneaTop1?.p || 0) - (enneaTop2?.p || 0))
+  }
+}
 
-  const enneaConfident =
-    !!enneaTop1
-    && !!enneaTop2
-    && enneaTop1.p >= EARLY_STOP.enneaTop1
-    && enneaTop1.p - enneaTop2.p >= EARLY_STOP.enneaGap
+const computeStabilityScore = (snapshots: StopSnapshot[]): number => {
+  const recent = snapshots.slice(-3)
+  if (recent.length < 3) return 0
 
-  if (mbtiConfident && enneaConfident) {
-    return { done: true, reason: 'threshold' }
+  const sameMbtiTop = recent.every(snapshot => snapshot.mbtiTop === recent[0].mbtiTop)
+  const sameEnneaTop = recent.every(snapshot => snapshot.enneaTop === recent[0].enneaTop)
+  const mbtiProbStable = variation(recent.map(snapshot => snapshot.mbtiTopProb)) <= 0.045
+  const enneaProbStable = variation(recent.map(snapshot => snapshot.enneaTopProb)) <= 0.05
+  const mbtiGapStable = variation(recent.map(snapshot => snapshot.mbtiGap)) <= 0.05
+  const enneaGapStable = variation(recent.map(snapshot => snapshot.enneaGap)) <= 0.05
+
+  const checks = [
+    sameMbtiTop,
+    sameEnneaTop,
+    mbtiProbStable,
+    enneaProbStable,
+    mbtiGapStable,
+    enneaGapStable
+  ]
+
+  return checks.filter(Boolean).length / checks.length
+}
+
+export const shouldStop = (
+  distribution: DistributionState,
+  answerCount: number,
+  minQuestions: number,
+  maxQuestions: number,
+  previousSnapshots: StopSnapshot[]
+): StopCheckDecision => {
+  const snapshot = buildStopSnapshot(distribution)
+  const composedSnapshots = [...previousSnapshots, snapshot]
+  const stabilityScore = computeStabilityScore(composedSnapshots)
+  const conflictCount = distribution.conflicts.length
+
+  const metrics = {
+    answerCount,
+    minQuestions,
+    maxQuestions,
+    mbtiTop1: snapshot.mbtiTopProb,
+    mbtiGap: snapshot.mbtiGap,
+    enneaTop1: snapshot.enneaTopProb,
+    enneaGap: snapshot.enneaGap,
+    conflictCount,
+    stabilityScore
   }
 
-  return { done: false, reason: 'continue' }
+  if (answerCount >= maxQuestions) {
+    return {
+      done: true,
+      reason: 'cap',
+      detail: 'max_cap',
+      snapshot,
+      metrics
+    }
+  }
+
+  if (answerCount < minQuestions) {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'min_questions',
+      snapshot,
+      metrics
+    }
+  }
+
+  const mbtiConfident =
+    snapshot.mbtiTopProb >= EARLY_STOP.mbtiTop1
+    && snapshot.mbtiGap >= EARLY_STOP.mbtiGap
+  const enneaConfident =
+    snapshot.enneaTopProb >= EARLY_STOP.enneaTop1
+    && snapshot.enneaGap >= EARLY_STOP.enneaGap
+
+  if (!mbtiConfident || !enneaConfident) {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'low_confidence',
+      snapshot,
+      metrics
+    }
+  }
+
+  if (conflictCount > 1) {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'conflict_high',
+      snapshot,
+      metrics
+    }
+  }
+
+  if (stabilityScore < 0.66) {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'unstable',
+      snapshot,
+      metrics
+    }
+  }
+
+  return {
+    done: true,
+    reason: 'early_stop',
+    detail: 'threshold_met',
+    snapshot,
+    metrics
+  }
 }
 
 export const summarizeDistribution = (distribution: DistributionState) => {

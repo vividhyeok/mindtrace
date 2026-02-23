@@ -127,3 +127,7 @@ mindtrace/
   - 변경 요약: 질문 생성 규칙을 단일 축/맥락 명시 중심으로 강화하고, 질문 품질 필터에 맥락 모호성·사회적 바람직성·비교 축 과다·겉/속 혼합 검사를 추가. conflict 신호가 높을 때만 겉/속 불일치 확인 문항을 허용하도록 생성 프롬프트와 fallback 세트를 동기화.
   - 영향 범위(파일/기능): `server/utils/questions.ts`(curated/fallback 문항 개편, 품질 필터 확장), `server/utils/inference.ts`(질문 생성 프롬프트 강화, reject/retry/fallback/ambiguity 로그)
   - 다음 액션: 운영 로그에서 `question.filter.reject` 상위 사유(특히 context/axis mix) 비율 확인 후 임계값 미세 조정, 업무/사적 맥락 문항 비율을 데이터 기반으로 튜닝
+- 2026-02-23 17:58:50 KST
+  - 변경 요약: 세션 만료(401) 시 클라이언트가 멈추지 않도록 자동 복구 흐름 추가. API 요청에서 401 감지 시 토큰/세션을 즉시 정리하고 `/`로 리다이렉트하도록 처리했으며, 라우트 가드에서도 만료 시 세션 정리를 함께 수행하도록 보강.
+  - 영향 범위(파일/기능): `composables/useApiClient.ts`(401 공통 처리/리다이렉트), `middleware/require-auth.ts`(만료 시 `clearSession` 포함)
+  - 다음 액션: 서버 메모리 토큰 초기화(재시작/배포) 상황에서도 사용자 이탈이 최소화되도록 게이트 화면에 재입장 안내 문구를 짧게 추가 검토

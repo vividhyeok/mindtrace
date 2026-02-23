@@ -23,13 +23,17 @@ const clientSession = useClientSession()
 
 const loading = ref(true)
 const answering = ref(false)
+const finalizing = ref(false)
 const errorMessage = ref('')
 const sessionId = ref('')
 const currentQuestion = ref<PublicQuestion | null>(null)
 const progress = ref({ current: 0, max: 28, ratio: 0 })
 const resumeSnapshot = ref<SessionSnapshot | null>(null)
+const selectedAnswer = ref<'yes' | 'no' | null>(null)
 
-const progressPercent = computed(() => Math.round(progress.value.ratio * 100))
+const progressVisual = computed(() => {
+  return Math.min(94, 14 + progress.value.current * 6)
+})
 
 const fetchSnapshot = async (id: string) => {
   return await api.get<SessionSnapshot>(`/api/session/${id}`)
@@ -46,16 +50,22 @@ const startSession = async () => {
 const finalizeNow = async () => {
   if (!sessionId.value) return
 
-  const report = await api.post<FinalReport>('/api/finalize', {
-    sessionId: sessionId.value
-  })
+  finalizing.value = true
+  try {
+    const report = await api.post<FinalReport>('/api/finalize', {
+      sessionId: sessionId.value
+    })
 
-  clientSession.saveReport(sessionId.value, report)
+    clientSession.saveReport(sessionId.value, report)
 
-  await navigateTo({
-    path: '/result',
-    query: { sessionId: sessionId.value }
-  })
+    await navigateTo({
+      path: '/result',
+      query: { sessionId: sessionId.value }
+    })
+  }
+  finally {
+    finalizing.value = false
+  }
 }
 
 const applySnapshot = async (snapshot: SessionSnapshot) => {
@@ -138,9 +148,10 @@ const startFresh = async () => {
 }
 
 const submitAnswer = async (answer: 'yes' | 'no') => {
-  if (!currentQuestion.value || answering.value) return
+  if (!currentQuestion.value || answering.value || finalizing.value) return
 
   answering.value = true
+  selectedAnswer.value = answer
   errorMessage.value = ''
 
   try {
@@ -165,6 +176,7 @@ const submitAnswer = async (answer: 'yes' | 'no') => {
   }
   finally {
     answering.value = false
+    selectedAnswer.value = null
   }
 }
 
@@ -177,67 +189,79 @@ onMounted(async () => {
   <main class="mx-auto max-w-3xl">
     <section class="soft-card p-6 sm:p-8">
       <div v-if="loading" class="py-20 text-center">
-        <p class="text-base font-bold">테스트를 준비하는 중...</p>
+        <div class="inline-flex items-center gap-3 text-sm font-bold text-ink/80">
+          <span class="h-5 w-5 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />
+          테스트를 준비하는 중...
+        </div>
       </div>
 
       <div v-else>
         <div v-if="resumeSnapshot" class="rounded-4xl border border-white/80 bg-white/90 p-6 shadow-soft">
-          <p class="text-sm font-bold text-ink/70">진행 중인 테스트를 발견했어요</p>
-          <p class="mt-2 text-base font-bold">
-            {{ resumeSnapshot.progress.current }} / {{ resumeSnapshot.progress.max }} 문항까지 완료
-          </p>
-          <p class="mt-1 text-sm text-ink/70">
-            이어서 진행하거나 새로 시작할 수 있어요.
-          </p>
+          <p class="text-sm font-bold text-ink/70">이어서 진행할 테스트가 있어요</p>
+          <p class="mt-2 text-lg font-extrabold">질문 {{ resumeSnapshot.progress.current + 1 }}부터 이어서 진행</p>
+          <p class="mt-2 text-sm text-ink/70">이어하기를 누르면 마지막 질문 상태로 복구돼요.</p>
 
           <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <button class="soft-button-secondary text-lg" @click="continueExisting">이어하기</button>
-            <button class="soft-button-ghost text-lg" @click="startFresh">새로 시작</button>
+            <BaseButton variant="secondary" @click="continueExisting">이어하기</BaseButton>
+            <BaseButton variant="ghost" @click="startFresh">새로 시작</BaseButton>
           </div>
         </div>
 
         <template v-else>
           <div class="mb-5">
             <div class="mb-2 flex items-center justify-between text-sm font-bold text-ink/70">
-              <span>진행률</span>
-              <span>{{ progress.current }} / {{ progress.max }} ({{ progressPercent }}%)</span>
+              <span>질문 {{ progress.current + 1 }}</span>
+              <span>{{ answering ? '응답 처리 중' : finalizing ? '결과 정리 중' : '진행 중' }}</span>
             </div>
-            <div class="h-3 rounded-full bg-lilac">
+            <div class="h-3 rounded-full bg-lilac/80">
               <div
-                class="h-3 rounded-full bg-peach transition-all duration-300"
-                :style="{ width: `${progressPercent}%` }"
+                class="h-3 rounded-full bg-[#6D28D9] transition-all duration-300"
+                :style="{ width: `${progressVisual}%` }"
               />
             </div>
           </div>
 
-          <div v-if="currentQuestion" class="rounded-4xl border border-white/80 bg-white/90 p-6 shadow-soft">
+          <div v-if="currentQuestion" class="rounded-4xl border border-white/80 bg-white/92 p-6 shadow-soft">
             <p class="mb-2 text-xs font-bold text-ink/60">질문 {{ progress.current + 1 }}</p>
-            <p class="text-lg font-bold leading-8 sm:text-2xl">{{ currentQuestion.text_ko }}</p>
+            <p class="text-xl font-bold leading-8 sm:text-2xl">{{ currentQuestion.text_ko }}</p>
 
             <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                class="soft-button-secondary w-full text-lg"
-                :disabled="answering"
+              <BaseButton
+                variant="secondary"
+                :disabled="answering || finalizing"
+                :class="selectedAnswer === 'yes' ? 'ring-3 ring-[#6D28D9]/25' : ''"
                 @click="submitAnswer('yes')"
               >
                 그렇다
-              </button>
-              <button
-                class="soft-button-primary w-full text-lg"
-                :disabled="answering"
+              </BaseButton>
+              <BaseButton
+                :disabled="answering || finalizing"
+                :class="selectedAnswer === 'no' ? 'ring-3 ring-[#6D28D9]/25' : ''"
                 @click="submitAnswer('no')"
               >
                 아니다
-              </button>
+              </BaseButton>
+            </div>
+
+            <div v-if="answering" class="mt-4 inline-flex items-center gap-2 text-sm font-bold text-ink/80">
+              <span class="h-4 w-4 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />
+              다음 질문 준비 중...
             </div>
 
             <p class="mt-4 text-xs font-bold text-ink/60">
-              중립 선택 없이, 지금 더 가까운 쪽을 골라 주세요.
+              중립 없이 지금 더 끌리는 쪽을 선택해 주세요.
             </p>
           </div>
         </template>
 
-        <div v-if="errorMessage" class="mt-4 rounded-2xl bg-[#ffe0ec] px-4 py-3 text-sm font-bold text-[#b93b64]">
+        <div v-if="finalizing" class="mt-4 rounded-3xl bg-lilac/70 px-4 py-4">
+          <div class="inline-flex items-center gap-2 text-sm font-bold text-ink/80">
+            <span class="h-4 w-4 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />
+            결과 정리 중...
+          </div>
+        </div>
+
+        <div v-if="errorMessage" class="mt-4 rounded-3xl bg-[#ffe0ec] px-4 py-3 text-sm font-bold text-[#b93b64]">
           {{ errorMessage }}
         </div>
       </div>

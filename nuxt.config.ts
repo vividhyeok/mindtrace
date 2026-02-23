@@ -9,6 +9,7 @@ export default defineNuxtConfig({
     appPasscode: process.env.APP_PASSCODE,
     logLevel: process.env.LOG_LEVEL || 'basic',
     maxQuestions: process.env.MAX_QUESTIONS || '28',
+    minQuestions: process.env.MIN_QUESTIONS || '9',
     sessionTtlMinutes: process.env.SESSION_TTL_MINUTES || '180',
     public: {
       appName: 'mindtrace'

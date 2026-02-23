@@ -77,6 +77,74 @@ export interface TypeCandidate<T extends string = string> {
   p: number
 }
 
+export interface StopSnapshot {
+  mbtiTop: MbtiType
+  mbtiTopProb: number
+  mbtiGap: number
+  enneaTop: string
+  enneaTopProb: number
+  enneaGap: number
+}
+
+export interface StopCheckDecision {
+  done: boolean
+  reason: 'early_stop' | 'cap' | 'continue'
+  detail:
+    | 'min_questions'
+    | 'unstable'
+    | 'low_confidence'
+    | 'conflict_high'
+    | 'max_cap'
+    | 'threshold_met'
+  snapshot: StopSnapshot
+  metrics: {
+    answerCount: number
+    minQuestions: number
+    maxQuestions: number
+    mbtiTop1: number
+    mbtiGap: number
+    enneaTop1: number
+    enneaGap: number
+    conflictCount: number
+    stabilityScore: number
+  }
+}
+
+export interface PrefetchBranch {
+  answer: YesNo
+  done: boolean
+  reason: 'early_stop' | 'cap' | 'continue'
+  detail: string
+  nextQuestion?: Question
+  distribution: DistributionState
+  summary: {
+    mbtiTop3: TypeCandidate<MbtiType>[]
+    enneagramTop2: TypeCandidate<string>[]
+    conflicts: string[]
+  }
+  snapshot: StopSnapshot
+  latencyMs: number
+  modelCalibration: {
+    attempted: boolean
+    applied: boolean
+  }
+  questionGeneration?: {
+    usedModel: boolean
+    retryCount: number
+    usedFallback: boolean
+  }
+}
+
+export interface PrefetchEntry {
+  questionId: string
+  baseAnswerCount: number
+  createdAt: number
+  inFlight: boolean
+  completedAt?: number
+  branches: Partial<Record<YesNo, PrefetchBranch>>
+  errors: Partial<Record<YesNo, string>>
+}
+
 export interface FinalReport {
   sessionId: string
   mbti: {
@@ -108,6 +176,8 @@ export interface SessionState {
   questionHistory: Question[]
   answers: AnswerRecord[]
   distribution: DistributionState
+  stopSnapshots: StopSnapshot[]
+  prefetchByQuestionId: Record<string, PrefetchEntry>
   report?: FinalReport
 }
 

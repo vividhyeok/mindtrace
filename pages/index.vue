@@ -83,6 +83,11 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
 })
+
+watch(isModalOpen, (opened) => {
+  if (!process.client) return
+  document.body.style.overflow = opened ? 'hidden' : ''
+})
 </script>
 
 <template>
@@ -124,7 +129,7 @@ onBeforeUnmount(() => {
           <BaseInput
             id="invite-passcode"
             v-model="passcode"
-            type="password"
+            type="text"
             placeholder="코드를 입력해 주세요"
             autocomplete="off"
             :disabled="pending"
@@ -138,7 +143,11 @@ onBeforeUnmount(() => {
               취소
             </BaseButton>
             <BaseButton :disabled="pending" @click="submit">
-              {{ pending ? '확인 중...' : '확인' }}
+              <span v-if="pending" class="inline-flex items-center gap-2">
+                <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-white" />
+                확인 중...
+              </span>
+              <span v-else>확인</span>
             </BaseButton>
           </div>
         </section>

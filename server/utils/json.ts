@@ -51,34 +51,52 @@ export interface JsonParseMeta<T> {
   value: T | null
   repaired: boolean
   stage: 'raw' | 'repaired' | 'failed'
+  rawParseLatencyMs: number
+  repairParseLatencyMs: number
+  repairApplied: boolean
   error?: string
 }
 
 export const parseJsonRepairWithMeta = <T>(raw: string): JsonParseMeta<T> => {
+  const startedAt = Date.now()
   if (!raw) {
     return {
       value: null,
       repaired: false,
       stage: 'failed',
+      rawParseLatencyMs: Date.now() - startedAt,
+      repairParseLatencyMs: 0,
+      repairApplied: false,
       error: 'empty response'
     }
   }
 
   const firstTry = raw.trim()
+  const rawParseStarted = Date.now()
   try {
+    const parsed = JSON.parse(firstTry) as T
     return {
-      value: JSON.parse(firstTry) as T,
+      value: parsed,
       repaired: false,
-      stage: 'raw'
+      stage: 'raw',
+      rawParseLatencyMs: Date.now() - rawParseStarted,
+      repairParseLatencyMs: 0,
+      repairApplied: false
     }
   }
   catch (error: any) {
+    const rawParseLatencyMs = Date.now() - rawParseStarted
     const repaired = removeTrailingCommas(extractJsonLike(stripMarkdownFence(firstTry)))
+    const repairParseStarted = Date.now()
     try {
+      const parsed = JSON.parse(repaired) as T
       return {
-        value: JSON.parse(repaired) as T,
+        value: parsed,
         repaired: true,
-        stage: 'repaired'
+        stage: 'repaired',
+        rawParseLatencyMs,
+        repairParseLatencyMs: Date.now() - repairParseStarted,
+        repairApplied: true
       }
     }
     catch (repairError: any) {
@@ -86,6 +104,9 @@ export const parseJsonRepairWithMeta = <T>(raw: string): JsonParseMeta<T> => {
         value: null,
         repaired: true,
         stage: 'failed',
+        rawParseLatencyMs,
+        repairParseLatencyMs: Date.now() - repairParseStarted,
+        repairApplied: true,
         error: repairError?.message || error?.message || 'json parse failed'
       }
     }

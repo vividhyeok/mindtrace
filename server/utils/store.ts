@@ -27,6 +27,11 @@ export const getSessionOrThrow = (sessionId: string): SessionState => {
   return session
 }
 
+export const getSessionById = (sessionId: string): SessionState | null => {
+  cleanExpiredSessions()
+  return sessionStore.get(sessionId) || null
+}
+
 export const saveReport = (sessionId: string, report: FinalReport) => {
   reportStore.set(sessionId, report)
 }

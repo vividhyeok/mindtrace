@@ -33,7 +33,9 @@ export default defineEventHandler(async (event) => {
       finalized: false,
       questionHistory: [firstQuestion],
       answers: [],
-      distribution: initDistribution()
+      distribution: initDistribution(),
+      stopSnapshots: [],
+      prefetchByQuestionId: {}
     }
 
     saveSession(session)

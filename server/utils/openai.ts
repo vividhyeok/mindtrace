@@ -9,6 +9,7 @@ interface O3JsonOptions<T> {
   schema?: Record<string, unknown>
   fallback: () => T
   requestId?: string
+  promptMeta?: Record<string, unknown>
 }
 
 const OPENAI_URL = 'https://api.openai.com/v1/responses'
@@ -105,13 +106,17 @@ const callOpenAI = async (
 
 export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> => {
   const { openaiApiKey } = getAppConfig()
+  const promptChars = options.system.length + options.user.length
+  const promptTokensEst = Math.ceil(promptChars / 3.2)
 
   if (!openaiApiKey) {
     logBasic('openai.mock_fallback', {
       requestId: options.requestId || 'n/a',
       label: options.label,
       reason: 'missing OPENAI_API_KEY',
-      fallbackUsed: true
+      fallbackUsed: true,
+      promptChars,
+      promptTokensEst
     })
     return options.fallback()
   }
@@ -136,7 +141,10 @@ export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> =>
     logFull('openai.request', {
       requestId: options.requestId || 'n/a',
       label: options.label,
-      schema: !!options.schema
+      schema: !!options.schema,
+      promptChars,
+      promptTokensEst,
+      ...options.promptMeta
     })
 
     const firstCall = await callOpenAI(openaiApiKey, payloadWithSchema, options.label)
@@ -148,8 +156,13 @@ export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> =>
         label: options.label,
         latencyMs: firstCall.latencyMs,
         repairedJson: firstParse.repaired,
+        parseLatencyMs: firstParse.rawParseLatencyMs + firstParse.repairParseLatencyMs,
+        repairLatencyMs: firstParse.repairParseLatencyMs,
+        repairApplied: firstParse.repairApplied,
         fallbackUsed: false,
-        retry: false
+        retry: false,
+        promptChars,
+        promptTokensEst
       })
       return firstParse.value
     }
@@ -159,6 +172,8 @@ export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> =>
       label: options.label,
       stage: firstParse.stage,
       error: firstParse.error || 'unknown',
+      parseLatencyMs: firstParse.rawParseLatencyMs + firstParse.repairParseLatencyMs,
+      repairLatencyMs: firstParse.repairParseLatencyMs,
       responsePreview: shorten(firstCall.text)
     })
 
@@ -176,8 +191,13 @@ export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> =>
         label: options.label,
         latencyMs: firstCall.latencyMs + secondCall.latencyMs,
         repairedJson: secondParse.repaired,
+        parseLatencyMs: secondParse.rawParseLatencyMs + secondParse.repairParseLatencyMs,
+        repairLatencyMs: secondParse.repairParseLatencyMs,
+        repairApplied: secondParse.repairApplied,
         fallbackUsed: false,
-        retry: true
+        retry: true,
+        promptChars,
+        promptTokensEst
       })
       return secondParse.value
     }
@@ -187,6 +207,8 @@ export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> =>
       label: options.label,
       stage: secondParse.stage,
       error: secondParse.error || 'unknown',
+      parseLatencyMs: secondParse.rawParseLatencyMs + secondParse.repairParseLatencyMs,
+      repairLatencyMs: secondParse.repairParseLatencyMs,
       responsePreview: shorten(secondCall.text)
     })
 
@@ -197,7 +219,9 @@ export const requestO3Json = async <T>(options: O3JsonOptions<T>): Promise<T> =>
       requestId: options.requestId || 'n/a',
       label: options.label,
       fallbackUsed: true,
-      reason: error?.message || 'unknown error'
+      reason: error?.message || 'unknown error',
+      promptChars,
+      promptTokensEst
     })
     return options.fallback()
   }
