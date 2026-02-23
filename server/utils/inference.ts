@@ -14,6 +14,7 @@ import {
   ensureQuestionScoring,
   getCuratedFallbackQuestion,
   sanitizeQuestionForClient,
+  shouldUseIncongruenceFollowup,
   validateGeneratedQuestionQuality
 } from '~/server/utils/questions'
 import {
@@ -193,7 +194,10 @@ export const generateAdaptiveQuestion = async (
   session: SessionState,
   options: InferenceRequestOptions = {}
 ): Promise<Question> => {
-  const fallback = ensureQuestionScoring(getCuratedFallbackQuestion(session))
+  const allowIncongruence = shouldUseIncongruenceFollowup(session)
+  const fallback = ensureQuestionScoring(
+    getCuratedFallbackQuestion(session, { allowIncongruence })
+  )
   const uncertainAxis: MbtiAxis = getMostUncertainAxis(session.distribution)
   const recentQuestions = session.questionHistory.slice(-8)
   const recentQuestionTexts = recentQuestions.map(question => question.text_ko)
@@ -201,10 +205,19 @@ export const generateAdaptiveQuestion = async (
   const system = [
     'You generate one Korean yes/no scenario question for personality inference.',
     'Must be answerable with yes/no only (no neutral).',
-    'Question text must be 18~70 Korean characters.',
+    'Question text must be 18~70 Korean characters and concise.',
+    'Use exactly one psychological angle per question: behavior OR internal reaction OR judgment criterion.',
+    'Do not mix outer behavior, inner feeling, and decision criterion in one sentence.',
+    'If situational, lock context clearly to one of: 업무/공식, 사적 관계, 일반 일상.',
+    'Avoid ambiguous context labels like 갈등 회의, 중요한 상황.',
+    'Comparison (A vs B) is allowed only within one axis.',
+    'Avoid moral framing and socially desirable cues.',
     'Avoid abstract definition statements and avoid translation-like awkward wording.',
     'Forbidden expressions: 보통, 가끔, 대체로, 상황에 따라, 사람마다, 케바케, 종종, 때때로.',
-    'Question must be behavior/scenario based and concise.',
+    allowIncongruence
+      ? 'Conflict mode is enabled: one incongruence check question is allowed (outer expression vs real judgment), but keep sentence short and concrete.'
+      : 'Conflict mode is disabled: avoid incongruence framing.',
+    'Question must be habit/reaction oriented and concise.',
     'Return strict JSON only.'
   ].join(' ')
 
@@ -217,10 +230,12 @@ export const generateAdaptiveQuestion = async (
       `Top MBTI: ${JSON.stringify(getTopCandidates(session.distribution.mbtiProbs16, 3))}`,
       `Top Enneagram: ${JSON.stringify(getTopCandidates(session.distribution.enneagramProbs9, 3))}`,
       `Recent questions (avoid overlap): ${JSON.stringify(recentQuestionTexts)}`,
+      `Question mode: ${allowIncongruence ? 'single_dimension_or_incongruence' : 'single_dimension_only'}`,
       previousFailures.length > 0
         ? `Previous filter failures: ${previousFailures.join('; ')}`
         : 'Previous filter failures: none',
       'Provide one discriminative question in Korean.',
+      'targets.mbtiAxes must include exactly one axis only.',
       'scoring.mbti should use IE/SN/TF/JP with positive value meaning yes -> first letter (I/S/T/J).',
       'scoring.enneagram should contain one to three types with positive weights.',
       'JSON keys: id, text_ko, targets, rationale_short, scoring.'
@@ -240,10 +255,12 @@ export const generateAdaptiveQuestion = async (
       id: modelQuestion.id || fallback.id
     })
 
-    const quality = validateGeneratedQuestionQuality(ensured, recentQuestions)
+    const quality = validateGeneratedQuestionQuality(ensured, recentQuestions, {
+      allowIncongruence
+    })
 
     if (quality.valid) {
-      logFull('question_filter.pass', {
+      logFull('question.filter.pass', {
         requestId: options.requestId || 'n/a',
         attempt,
         questionId: ensured.id,
@@ -253,7 +270,7 @@ export const generateAdaptiveQuestion = async (
     }
 
     previousFailures.push(`attempt_${attempt}: ${quality.reasons.join(', ')}`)
-    logFull('question_filter.fail', {
+    logFull('question.filter.reject', {
       requestId: options.requestId || 'n/a',
       attempt,
       questionId: ensured.id,
@@ -261,9 +278,28 @@ export const generateAdaptiveQuestion = async (
       reasons: quality.reasons,
       similarity: quality.similarity
     })
+
+    if (quality.ambiguityFlags.length > 0) {
+      logFull('question.ambiguity.flag', {
+        requestId: options.requestId || 'n/a',
+        attempt,
+        questionId: ensured.id,
+        flags: quality.ambiguityFlags,
+        text: ensured.text_ko
+      })
+    }
+
+    if (attempt < MAX_QUESTION_REGENERATIONS) {
+      logFull('question.filter.retry', {
+        requestId: options.requestId || 'n/a',
+        attemptFrom: attempt,
+        attemptTo: attempt + 1,
+        reasonCount: quality.reasons.length
+      })
+    }
   }
 
-  logFull('question_filter.fallback', {
+  logFull('question.filter.fallback', {
     requestId: options.requestId || 'n/a',
     regenerationCount: MAX_QUESTION_REGENERATIONS,
     fallbackQuestionId: fallback.id,

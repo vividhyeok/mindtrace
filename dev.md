@@ -123,3 +123,7 @@ mindtrace/
   - 변경 요약: `/` 첫 화면을 미니멀 카피(제목+보조문구+CTA)로 정리하고, 초대코드 입력을 모달 UX로 전환(배경 클릭/ESC 닫기 포함). 인증 로직(`/api/auth` 호출, 토큰 저장, `/test` 이동)은 기존 그대로 유지.
   - 영향 범위(파일/기능): `pages/index.vue`(카피/레이아웃/모달 입력 UX), `app.vue`(`/`에서 상단 브랜드 헤더 숨김), `components/BaseButton.vue`/`components/BaseInput.vue`(공통 UI 컴포넌트 재사용 기반)
   - 다음 액션: 실제 모바일 디바이스에서 키보드 오픈 시 모달 입력 가시성 점검, 필요 시 모달 내부 스크롤/포커스 트랩 보강
+- 2026-02-23 17:46:43 KST
+  - 변경 요약: 질문 생성 규칙을 단일 축/맥락 명시 중심으로 강화하고, 질문 품질 필터에 맥락 모호성·사회적 바람직성·비교 축 과다·겉/속 혼합 검사를 추가. conflict 신호가 높을 때만 겉/속 불일치 확인 문항을 허용하도록 생성 프롬프트와 fallback 세트를 동기화.
+  - 영향 범위(파일/기능): `server/utils/questions.ts`(curated/fallback 문항 개편, 품질 필터 확장), `server/utils/inference.ts`(질문 생성 프롬프트 강화, reject/retry/fallback/ambiguity 로그)
+  - 다음 액션: 운영 로그에서 `question.filter.reject` 상위 사유(특히 context/axis mix) 비율 확인 후 임계값 미세 조정, 업무/사적 맥락 문항 비율을 데이터 기반으로 튜닝
