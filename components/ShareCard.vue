@@ -31,7 +31,7 @@ defineExpose({ rootEl })
     />
 
     <div class="relative flex h-full flex-col">
-      <div class="mb-4 flex items-start justify-between">
+      <div class="mb-4 flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-semibold text-ink/70">mindtrace 결과</p>
           <h3 class="font-title text-3xl font-extrabold">{{ report.mbti.top }} · {{ report.enneagram.top }}</h3>
@@ -48,13 +48,9 @@ defineExpose({ rootEl })
         <p class="text-lg font-extrabold">{{ report.nickname_ko }}</p>
       </div>
 
-      <div class="mb-3 flex flex-wrap gap-2">
-        <span class="sticker bg-peach">MBTI {{ report.mbti.top }}</span>
-        <span class="sticker bg-mint">Ennea {{ report.enneagram.top }}</span>
-        <span class="sticker bg-sky">톤 {{ report.style_tags.tone }}</span>
-      </div>
-
-      <p class="max-h-24 overflow-hidden text-sm leading-6">{{ report.short_caption_ko }}</p>
+      <p class="text-sm leading-6">
+        {{ report.summaryShort || report.short_caption_ko }}
+      </p>
 
       <div class="mt-auto pt-4 text-xs font-bold text-ink/70">
         친구랑 같이 해보기 · invite only

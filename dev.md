@@ -141,3 +141,7 @@ mindtrace/
   - 영향 범위(파일/기능): `server/utils/questions.ts`(문항 뱅크+선택 엔진), `server/utils/probability.ts`(yes/no 전이 기반 업데이트/조기종료 게이트), `server/api/answer.post.ts`(selection-centric 처리), `server/utils/inference.ts`(finalize 전용으로 축소), `types/mindtrace.ts`(문항 메타/phase 타입), `server/api/start.post.ts`, `server/utils/config.ts`, `nuxt.config.ts`, `.env.example`, `pages/test.vue`
   - in-memory 세션 특성: 질문 엔진이 빨라져도 메모리 스토어 특성상 서버 재시작 시 진행 상태가 유실될 수 있음. 운영 배포 시 KV/Redis 영속화가 필요.
   - 다음 액션: 실사용 로그 기준 `question.select.score` 상위/하위 문항의 분리 효율을 점검해 뱅크 점수 가중치 튜닝, `MAX_QUESTIONS=18~20` 운영값 확정
+- 2026-02-23 20:47:22 KST
+  - 변경 요약: finalize 결과 스키마를 섹션형 리포트 구조(`summaryShort`, `corePattern`, `outerVsInner`, `strengthContexts`, `stressPattern`, `misreadByOthers`, `communicationTips`, `whyThisType`, 경합 노트 등)로 확장하고, 최종 리포트 프롬프트를 행동/판단/반응 중심 근거형 문장 생성 규칙으로 강화. OPENAI fallback 리포트도 동일 스키마를 채우도록 템플릿 확장.
+  - 영향 범위(파일/기능): `types/mindtrace.ts`(FinalReport/FinalizeModelOutput 확장), `server/utils/inference.ts`(finalize JSON schema·프롬프트·fallback 리포트 확장), `pages/result.vue`(섹션형 결과 리포트 UI 개편), `components/ShareCard.vue`(요약 텍스트를 `summaryShort` 중심으로 축약)
+  - 다음 액션: 실사용 세션 로그 기준으로 섹션별 길이/가독성 튜닝, 경합 노트 문장 밀도(근거 대비 가독성) 조정, 공유카드 문구 길이 컷오프 임계값 미세 조정

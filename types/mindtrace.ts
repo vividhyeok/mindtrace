@@ -195,6 +195,18 @@ export interface FinalReport {
     candidates: TypeCandidate<string>[]
   }
   nickname_ko: string
+  summaryShort: string
+  corePattern: string
+  outerVsInner: string
+  strengthContexts: string[]
+  stressPattern: string
+  misreadByOthers: string
+  communicationTips: string[]
+  whyThisType: string
+  mbtiCompetitionNote: string
+  enneaCompetitionNote: string
+  growthHint?: string
+  decisionStyle?: string
   narrative_ko: string
   misperception_ko: string
   short_caption_ko: string
@@ -229,6 +241,7 @@ export interface StartResponse {
 export interface AnswerResponse {
   done: boolean
   nextQuestion?: PublicQuestion
+  phase?: QuestionPhase
   progress: {
     current: number
     max: number
@@ -257,6 +270,18 @@ export interface FinalizeModelOutput {
     candidates: TypeCandidate<string>[]
   }
   nickname_ko: string
+  summaryShort: string
+  corePattern: string
+  outerVsInner: string
+  strengthContexts: string[]
+  stressPattern: string
+  misreadByOthers: string
+  communicationTips: string[]
+  whyThisType: string
+  mbtiCompetitionNote: string
+  enneaCompetitionNote: string
+  growthHint?: string
+  decisionStyle?: string
   narrative_ko: string
   misperception_ko: string
   short_caption_ko: string
