@@ -7,6 +7,7 @@ import {
   type MbtiAxis,
   type MbtiType,
   type Question,
+  type QuestionPhase,
   type StopCheckDecision,
   type StopSnapshot,
   type TypeCandidate,
@@ -117,7 +118,7 @@ const detectConflicts = (distribution: DistributionState): string[] => {
   }
 
   const tf = distribution.axisScores.TF
-  if (Math.abs(tf) < 0.3 && distribution.axisEvidence.TF.positive + distribution.axisEvidence.TF.negative >= 4) {
+  if (Math.abs(tf) < 0.25 && distribution.axisEvidence.TF.positive + distribution.axisEvidence.TF.negative >= 4) {
     conflictMessages.push('사고/감정(T/F) 판단 기준이 상황에 따라 교차함')
   }
 
@@ -139,29 +140,56 @@ export const getTopCandidates = <T extends string>(
     .map(([type, p]) => ({ type, p }))
 }
 
+const toFallbackDelta = (question: Question, answer: YesNo) => {
+  const signed = answer === 'yes' ? 1 : -1
+  const mbtiDelta: Partial<Record<MbtiAxis, number>> = {}
+  const enneaDelta: Partial<Record<EnneagramType, number>> = {}
+
+  const mbtiWeight = question.scoring?.mbti || {}
+  const enneaWeight = question.scoring?.enneagram || {}
+
+  for (const axis of Object.keys(mbtiWeight) as MbtiAxis[]) {
+    mbtiDelta[axis] = (mbtiWeight[axis] || 0) * signed
+  }
+
+  for (const type of Object.keys(enneaWeight) as EnneagramType[]) {
+    enneaDelta[type] = (enneaWeight[type] || 0) * signed
+  }
+
+  return { mbtiDelta, enneaDelta }
+}
+
+const resolveAnswerDelta = (question: Question, answer: YesNo) => {
+  if (question.transitions?.[answer]) {
+    return {
+      mbtiDelta: question.transitions[answer].mbti || {},
+      enneaDelta: question.transitions[answer].enneagram || {}
+    }
+  }
+  return toFallbackDelta(question, answer)
+}
+
 export const applyAnswerToDistribution = (
   distribution: DistributionState,
   question: Question,
   answer: YesNo
 ): DistributionState => {
-  const signed = answer === 'yes' ? 1 : -1
-  const mbtiWeight = question.scoring?.mbti || {}
-  const enneaWeight = question.scoring?.enneagram || {}
+  const { mbtiDelta, enneaDelta } = resolveAnswerDelta(question, answer)
 
-  for (const axis of Object.keys(mbtiWeight) as MbtiAxis[]) {
-    const delta = (mbtiWeight[axis] || 0) * signed
+  for (const axis of Object.keys(mbtiDelta) as MbtiAxis[]) {
+    const delta = Number(mbtiDelta[axis] || 0)
     distribution.axisScores[axis] += delta
 
-    if (delta >= 0) {
+    if (delta > 0) {
       distribution.axisEvidence[axis].positive += 1
     }
-    else {
+    else if (delta < 0) {
       distribution.axisEvidence[axis].negative += 1
     }
   }
 
-  for (const ennea of Object.keys(enneaWeight) as EnneagramType[]) {
-    const delta = (enneaWeight[ennea] || 0) * signed
+  for (const ennea of Object.keys(enneaDelta) as EnneagramType[]) {
+    const delta = Number(enneaDelta[ennea] || 0)
     distribution.enneagramScores[ennea] += delta
   }
 
@@ -241,10 +269,10 @@ const computeStabilityScore = (snapshots: StopSnapshot[]): number => {
 
   const sameMbtiTop = recent.every(snapshot => snapshot.mbtiTop === recent[0].mbtiTop)
   const sameEnneaTop = recent.every(snapshot => snapshot.enneaTop === recent[0].enneaTop)
-  const mbtiProbStable = variation(recent.map(snapshot => snapshot.mbtiTopProb)) <= 0.045
-  const enneaProbStable = variation(recent.map(snapshot => snapshot.enneaTopProb)) <= 0.05
-  const mbtiGapStable = variation(recent.map(snapshot => snapshot.mbtiGap)) <= 0.05
-  const enneaGapStable = variation(recent.map(snapshot => snapshot.enneaGap)) <= 0.05
+  const mbtiProbStable = variation(recent.map(snapshot => snapshot.mbtiTopProb)) <= 0.05
+  const enneaProbStable = variation(recent.map(snapshot => snapshot.enneaTopProb)) <= 0.055
+  const mbtiGapStable = variation(recent.map(snapshot => snapshot.mbtiGap)) <= 0.055
+  const enneaGapStable = variation(recent.map(snapshot => snapshot.enneaGap)) <= 0.055
 
   const checks = [
     sameMbtiTop,
@@ -258,17 +286,26 @@ const computeStabilityScore = (snapshots: StopSnapshot[]): number => {
   return checks.filter(Boolean).length / checks.length
 }
 
+interface StopRuntimeOptions {
+  phase?: QuestionPhase
+  validationCount?: number
+  requiredValidationCount?: number
+}
+
 export const shouldStop = (
   distribution: DistributionState,
   answerCount: number,
   minQuestions: number,
   maxQuestions: number,
-  previousSnapshots: StopSnapshot[]
+  previousSnapshots: StopSnapshot[],
+  options: StopRuntimeOptions = {}
 ): StopCheckDecision => {
   const snapshot = buildStopSnapshot(distribution)
   const composedSnapshots = [...previousSnapshots, snapshot]
   const stabilityScore = computeStabilityScore(composedSnapshots)
   const conflictCount = distribution.conflicts.length
+  const validationCount = options.validationCount || 0
+  const requiredValidationCount = options.requiredValidationCount || 0
 
   const metrics = {
     answerCount,
@@ -279,7 +316,10 @@ export const shouldStop = (
     enneaTop1: snapshot.enneaTopProb,
     enneaGap: snapshot.enneaGap,
     conflictCount,
-    stabilityScore
+    stabilityScore,
+    phase: options.phase,
+    validationCount,
+    requiredValidationCount
   }
 
   if (answerCount >= maxQuestions) {
@@ -297,6 +337,26 @@ export const shouldStop = (
       done: false,
       reason: 'continue',
       detail: 'min_questions',
+      snapshot,
+      metrics
+    }
+  }
+
+  if (options.phase && options.phase !== 'C') {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'phase_not_ready',
+      snapshot,
+      metrics
+    }
+  }
+
+  if (requiredValidationCount > 0 && validationCount < requiredValidationCount) {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'validation_incomplete',
       snapshot,
       metrics
     }
@@ -329,7 +389,7 @@ export const shouldStop = (
     }
   }
 
-  if (stabilityScore < 0.66) {
+  if (stabilityScore < 0.62) {
     return {
       done: false,
       reason: 'continue',

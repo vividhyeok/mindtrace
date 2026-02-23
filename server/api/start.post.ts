@@ -34,11 +34,11 @@ export default defineEventHandler(async (event) => {
       lastUpdatedAt: now,
       done: false,
       finalized: false,
+      phase: 'A',
       questionHistory: [firstQuestion],
       answers: [],
       distribution: initDistribution(),
-      stopSnapshots: [],
-      prefetchByQuestionId: {}
+      stopSnapshots: []
     }
 
     saveSession(session)

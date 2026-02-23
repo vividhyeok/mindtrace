@@ -1,223 +1,545 @@
-import { randomUUID } from 'node:crypto'
-import type { DistributionState, MbtiAxis, Question, SessionState } from '~/types/mindtrace'
-import { BASE_CURATED_QUESTION_COUNT } from '~/server/utils/constants'
-import { getMostUncertainAxis, getTopCandidates } from '~/server/utils/probability'
+import type {
+  EnneagramType,
+  MbtiAxis,
+  MbtiType,
+  Question,
+  QuestionContext,
+  QuestionMode,
+  QuestionPattern,
+  QuestionPhase,
+  QuestionSelectionCandidate,
+  QuestionSelectionResult,
+  SessionState,
+  TypeCandidate
+} from '~/types/mindtrace'
+import { AXIS_LETTERS, BASE_CURATED_QUESTION_COUNT } from '~/server/utils/constants'
+import { getTopCandidates } from '~/server/utils/probability'
 
-const curatedQuestions: Question[] = [
-  {
-    id: 'q_seed_01',
-    text_ko: '처음 만난 모임에서는 말을 늘리기보다 먼저 분위기를 살핀다.',
-    targets: { mbtiAxes: ['IE'], enneagram: ['4', '5', '9'] },
-    rationale_short: 'I/E 에너지 방향 확인',
-    scoring: { mbti: { IE: 1.05 }, enneagram: { '4': 0.3, '5': 0.35, '9': 0.25 } }
-  },
-  {
-    id: 'q_seed_02',
-    text_ko: '일정이 갑자기 바뀌어도 원래 계획을 지키려는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['1', '6'] },
-    rationale_short: 'J/P 계획 고정성 확인',
-    scoring: { mbti: { JP: 1.1 }, enneagram: { '1': 0.35, '6': 0.25 } }
-  },
-  {
-    id: 'q_seed_03',
-    text_ko: '설명할 때 사례보다 원리부터 말하는 편이다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['5'] },
-    rationale_short: 'S/N 정보 처리 우선순위 확인',
-    scoring: { mbti: { SN: -1.05 }, enneagram: { '5': 0.35 } }
-  },
-  {
-    id: 'q_seed_04',
-    text_ko: '의견 충돌이 생기면 감정보다 기준 정리부터 하는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['1', '3', '8'] },
-    rationale_short: 'T/F 판단 기준 확인',
-    scoring: { mbti: { TF: 1.1 }, enneagram: { '1': 0.25, '3': 0.25, '8': 0.2 } }
-  },
-  {
-    id: 'q_seed_05',
-    text_ko: '역할이 모호하면 바로 기준표를 만들어 정리하는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['1', '6'] },
-    rationale_short: '구조화 습관 확인',
-    scoring: { mbti: { JP: 0.95 }, enneagram: { '1': 0.3, '6': 0.35 } }
-  },
-  {
-    id: 'q_seed_06',
-    text_ko: '새 아이디어를 들으면 적용법보다 가능성부터 떠오른다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['7', '4'] },
-    rationale_short: '추상적 가능성 탐색 경향 확인',
-    scoring: { mbti: { SN: -0.95 }, enneagram: { '7': 0.35, '4': 0.3 } }
+const AXIS_INDEX: Record<MbtiAxis, number> = {
+  IE: 0,
+  SN: 1,
+  TF: 2,
+  JP: 3
+}
+
+const PHASE_MODE_ALLOW: Record<QuestionPhase, QuestionMode[]> = {
+  A: ['axis_scan'],
+  B: ['axis_scan', 'tie_break'],
+  C: ['tie_break', 'validation']
+}
+
+const cloneQuestion = (question: Question): Question => structuredClone(question)
+
+const invertRecord = <T extends string>(record: Partial<Record<T, number>>): Partial<Record<T, number>> => {
+  const out: Partial<Record<T, number>> = {}
+  for (const [key, value] of Object.entries(record) as Array<[T, number]>) {
+    out[key] = -Number(value || 0)
   }
-]
+  return out
+}
 
-const axisFallback: Record<MbtiAxis, Omit<Question, 'id'>> = {
-  IE: {
-    text_ko: '휴일이 생기면 약속보다 혼자 쉬는 시간을 먼저 잡는다.',
-    targets: { mbtiAxes: ['IE'], enneagram: ['5', '9'] },
-    rationale_short: '사회 에너지 회복 습관 확인',
-    scoring: { mbti: { IE: 0.95 }, enneagram: { '5': 0.25, '9': 0.2 } }
-  },
-  SN: {
-    text_ko: '결정을 할 때 지금 정보보다 큰 흐름부터 보는 편이다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['5', '7'] },
-    rationale_short: '구체 정보 vs 패턴 우선순위 확인',
-    scoring: { mbti: { SN: -1.0 }, enneagram: { '5': 0.2, '7': 0.2 } }
-  },
-  TF: {
-    text_ko: '의견 충돌 때 관계보다 논리 일관성을 먼저 지키는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['1', '8'] },
-    rationale_short: '판단 기준 우선순위 확인',
-    scoring: { mbti: { TF: 1.0 }, enneagram: { '1': 0.2, '8': 0.3 } }
-  },
-  JP: {
-    text_ko: '진행 중에 새 아이디어가 떠오르면 계획보다 바로 실험하는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['7', '3'] },
-    rationale_short: '계획 고정성 vs 즉시 실험 성향 확인',
-    scoring: { mbti: { JP: -1.0 }, enneagram: { '7': 0.35, '3': 0.25 } }
+const symmetricTransitions = (
+  yesMbti: Partial<Record<MbtiAxis, number>>,
+  yesEnnea: Partial<Record<EnneagramType, number>>
+) => {
+  return {
+    yes: {
+      mbti: yesMbti,
+      enneagram: yesEnnea
+    },
+    no: {
+      mbti: invertRecord(yesMbti),
+      enneagram: invertRecord(yesEnnea)
+    }
   }
 }
 
-const enneagramFallbackQuestions: Record<string, Omit<Question, 'id'>> = {
-  '1': {
-    text_ko: '작은 실수도 기준에서 벗어나면 오래 신경 쓰는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['1'] },
-    rationale_short: '완결성/올바름 동기 확인',
-    scoring: { mbti: { JP: 0.4 }, enneagram: { '1': 0.55 } }
-  },
-  '2': {
-    text_ko: '내 일정이 밀려도 부탁을 받으면 먼저 응답하는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['2'] },
-    rationale_short: '관계 기여 동기 확인',
-    scoring: { mbti: { TF: -0.4 }, enneagram: { '2': 0.55 } }
-  },
-  '3': {
-    text_ko: '성과가 눈에 보이지 않으면 쉬는 시간에도 마음이 급해진다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['3'] },
-    rationale_short: '성취 중심 드라이브 확인',
-    scoring: { mbti: { JP: 0.3 }, enneagram: { '3': 0.55 } }
-  },
-  '4': {
-    text_ko: '무난한 선택보다 내 취향이 분명한 선택이 더 편하다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['4'] },
-    rationale_short: '정체성 고유성 동기 확인',
-    scoring: { mbti: { SN: -0.35 }, enneagram: { '4': 0.55 } }
-  },
-  '5': {
-    text_ko: '바빠도 정보를 충분히 파악해야 움직일 수 있는 편이다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['5'] },
-    rationale_short: '인지적 준비 욕구 확인',
-    scoring: { mbti: { SN: -0.35 }, enneagram: { '5': 0.55 } }
-  },
-  '6': {
-    text_ko: '결정을 내릴 때 최악의 변수부터 점검해야 마음이 놓인다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['6'] },
-    rationale_short: '리스크 대비 성향 확인',
-    scoring: { mbti: { JP: 0.25 }, enneagram: { '6': 0.55 } }
-  },
-  '7': {
-    text_ko: '일이 막히면 한 가지를 밀기보다 새 선택지를 바로 찾는다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['7'] },
-    rationale_short: '확장/회피 패턴 확인',
-    scoring: { mbti: { JP: -0.4 }, enneagram: { '7': 0.55 } }
-  },
-  '8': {
-    text_ko: '중요한 장면에서는 분위기보다 주도권을 직접 잡는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['8'] },
-    rationale_short: '통제/주도 동기 확인',
-    scoring: { mbti: { TF: 0.45 }, enneagram: { '8': 0.55 } }
-  },
-  '9': {
-    text_ko: '갈등 조짐이 보이면 내 주장보다 분위기 안정부터 챙긴다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['9'] },
-    rationale_short: '갈등 완충 경향 확인',
-    scoring: { mbti: { TF: -0.35 }, enneagram: { '9': 0.55 } }
+interface QuestionDraft {
+  id: string
+  text_ko: string
+  rationale_short: string
+  mbtiAxes: MbtiAxis[]
+  enneagram: EnneagramType[]
+  mode: QuestionMode
+  context: QuestionContext
+  pattern: QuestionPattern
+  cooldownGroup: string
+  ambiguityScore: number
+  qualityScore: number
+  expressionSignal?: number
+  judgmentSignal?: number
+  phaseHints?: QuestionPhase[]
+  transitions: ReturnType<typeof symmetricTransitions>
+}
+
+const buildQuestion = (draft: QuestionDraft): Question => {
+  return {
+    id: draft.id,
+    text_ko: draft.text_ko,
+    rationale_short: draft.rationale_short,
+    targets: {
+      mbtiAxes: draft.mbtiAxes,
+      enneagram: draft.enneagram
+    },
+    transitions: draft.transitions,
+    meta: {
+      context: draft.context,
+      mode: draft.mode,
+      pattern: draft.pattern,
+      cooldownGroup: draft.cooldownGroup,
+      ambiguityScore: draft.ambiguityScore,
+      qualityScore: draft.qualityScore,
+      expressionSignal: draft.expressionSignal,
+      judgmentSignal: draft.judgmentSignal,
+      phaseHints: draft.phaseHints
+    }
   }
 }
 
-const curatedFallbackPool: Array<Omit<Question, 'id'>> = [
-  {
-    text_ko: '여행 계획을 세울 때 동선부터 먼저 확정하는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['1', '6'] },
-    rationale_short: '계획 선호를 안정적으로 재확인',
-    scoring: { mbti: { JP: 0.9 }, enneagram: { '1': 0.25, '6': 0.3 } }
-  },
-  {
-    text_ko: '예상 못 한 변경이 생기면 바로 대안을 찾는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['7', '3'] },
-    rationale_short: '유연 대응 vs 계획 고정성 확인',
-    scoring: { mbti: { JP: -0.85 }, enneagram: { '7': 0.35, '3': 0.2 } }
-  },
-  {
-    text_ko: '처음 만난 사람과도 대화를 먼저 시작하는 편이다.',
-    targets: { mbtiAxes: ['IE'], enneagram: ['3', '7'] },
-    rationale_short: '외향적 에너지 발산 확인',
-    scoring: { mbti: { IE: -0.9 }, enneagram: { '3': 0.2, '7': 0.25 } }
-  },
-  {
-    text_ko: '의견이 다를 때 감정보다 근거 정리부터 하는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['1', '8'] },
-    rationale_short: '판단 기준 우선순위 재확인',
-    scoring: { mbti: { TF: 0.95 }, enneagram: { '1': 0.2, '8': 0.25 } }
-  },
-  {
-    text_ko: '새 아이디어를 들으면 실제 적용 장면이 먼저 떠오른다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['3', '6'] },
-    rationale_short: '구체 적용 중심 성향 확인',
-    scoring: { mbti: { SN: 0.85 }, enneagram: { '3': 0.2, '6': 0.2 } }
-  },
-  {
-    text_ko: '업무가 몰려도 정보가 충분해야 시작할 수 있는 편이다.',
-    targets: { mbtiAxes: ['SN'], enneagram: ['5'] },
-    rationale_short: '인지적 준비 욕구와 내향성 확인',
-    scoring: { mbti: { SN: -0.45 }, enneagram: { '5': 0.45 } }
-  },
-  {
-    text_ko: '팀 분위기가 흔들리면 갈등을 줄이는 선택을 먼저 한다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['9', '2'] },
-    rationale_short: '관계 안정 우선 경향 확인',
-    scoring: { mbti: { TF: -0.8 }, enneagram: { '9': 0.4, '2': 0.2 } }
-  },
-  {
-    text_ko: '지시가 모호해도 기준을 정하면 끝까지 밀어붙이는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['8', '3'] },
-    rationale_short: '주도적 실행 성향 확인',
-    scoring: { mbti: { JP: 0.7 }, enneagram: { '8': 0.35, '3': 0.2 } }
-  }
+const QUESTION_BANK: Question[] = [
+  buildQuestion({
+    id: 'bank_a_01',
+    text_ko: '처음 만난 모임에서는 말하기보다 분위기를 먼저 살피는 편이다.',
+    rationale_short: '에너지 방향 스캔',
+    mbtiAxes: ['IE'],
+    enneagram: ['5', '9'],
+    mode: 'axis_scan',
+    context: 'daily',
+    pattern: 'behavior',
+    cooldownGroup: 'ie_energy_1',
+    ambiguityScore: 0.16,
+    qualityScore: 0.88,
+    transitions: symmetricTransitions({ IE: 1.0 }, { '5': 0.2, '9': 0.16 })
+  }),
+  buildQuestion({
+    id: 'bank_a_02',
+    text_ko: '지친 날에도 사람을 만나면 오히려 에너지가 살아나는 편이다.',
+    rationale_short: '외향 회복성 스캔',
+    mbtiAxes: ['IE'],
+    enneagram: ['3', '7'],
+    mode: 'axis_scan',
+    context: 'daily',
+    pattern: 'internal',
+    cooldownGroup: 'ie_energy_2',
+    ambiguityScore: 0.2,
+    qualityScore: 0.84,
+    transitions: symmetricTransitions({ IE: -0.96 }, { '3': 0.15, '7': 0.2 })
+  }),
+  buildQuestion({
+    id: 'bank_a_03',
+    text_ko: '새 주제를 배울 때는 개념보다 예시부터 확인해야 이해가 빠르다.',
+    rationale_short: '정보 처리 방향 스캔',
+    mbtiAxes: ['SN'],
+    enneagram: ['6'],
+    mode: 'axis_scan',
+    context: 'daily',
+    pattern: 'judgment',
+    cooldownGroup: 'sn_info_1',
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
+    transitions: symmetricTransitions({ SN: 1.02 }, { '6': 0.2 })
+  }),
+  buildQuestion({
+    id: 'bank_a_04',
+    text_ko: '새 아이디어를 들으면 적용법보다 가능성부터 먼저 떠오르는 편이다.',
+    rationale_short: '추상 확장 스캔',
+    mbtiAxes: ['SN'],
+    enneagram: ['7', '4'],
+    mode: 'axis_scan',
+    context: 'daily',
+    pattern: 'internal',
+    cooldownGroup: 'sn_info_2',
+    ambiguityScore: 0.18,
+    qualityScore: 0.86,
+    transitions: symmetricTransitions({ SN: -0.98 }, { '7': 0.2, '4': 0.16 })
+  }),
+  buildQuestion({
+    id: 'bank_a_05',
+    text_ko: '의견 충돌이 생기면 관계보다 기준 정리부터 하는 편이다.',
+    rationale_short: '판단 기준 스캔',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '8'],
+    mode: 'axis_scan',
+    context: 'work',
+    pattern: 'judgment',
+    cooldownGroup: 'tf_judgment_1',
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
+    judgmentSignal: 0.9,
+    transitions: symmetricTransitions({ TF: 1.05 }, { '1': 0.2, '8': 0.16 })
+  }),
+  buildQuestion({
+    id: 'bank_a_06',
+    text_ko: '가까운 사람이 힘들어하면 해결보다 감정 반응부터 맞춰주는 편이다.',
+    rationale_short: '공감 우선 스캔',
+    mbtiAxes: ['TF'],
+    enneagram: ['2', '9'],
+    mode: 'axis_scan',
+    context: 'private',
+    pattern: 'behavior',
+    cooldownGroup: 'tf_judgment_2',
+    ambiguityScore: 0.18,
+    qualityScore: 0.86,
+    expressionSignal: 0.8,
+    transitions: symmetricTransitions({ TF: -1.0 }, { '2': 0.2, '9': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_a_07',
+    text_ko: '일을 시작하기 전에 순서표를 먼저 만드는 편이다.',
+    rationale_short: '계획 선호 스캔',
+    mbtiAxes: ['JP'],
+    enneagram: ['1', '6'],
+    mode: 'axis_scan',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'jp_plan_1',
+    ambiguityScore: 0.12,
+    qualityScore: 0.92,
+    transitions: symmetricTransitions({ JP: 1.0 }, { '1': 0.18, '6': 0.18 })
+  }),
+  buildQuestion({
+    id: 'bank_a_08',
+    text_ko: '계획이 있어도 더 나은 아이디어가 보이면 바로 바꾸는 편이다.',
+    rationale_short: '유연 전환 스캔',
+    mbtiAxes: ['JP'],
+    enneagram: ['7', '3'],
+    mode: 'axis_scan',
+    context: 'daily',
+    pattern: 'behavior',
+    cooldownGroup: 'jp_plan_2',
+    ambiguityScore: 0.16,
+    qualityScore: 0.88,
+    transitions: symmetricTransitions({ JP: -0.96 }, { '7': 0.18, '3': 0.14 })
+  }),
+
+  buildQuestion({
+    id: 'bank_b_01',
+    text_ko: '업무 회의에서 충돌이 나면 말하기 전에 근거를 메모로 정리한다.',
+    rationale_short: 'TF 경합 분리',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '5'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'tf_tie_1',
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
+    judgmentSignal: 0.86,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ TF: 0.92 }, { '1': 0.18, '5': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_b_02',
+    text_ko: '업무 요청을 받으면 기대효과보다 리스크부터 먼저 점검한다.',
+    rationale_short: 'SN/JP 경합 분리',
+    mbtiAxes: ['SN', 'JP'],
+    enneagram: ['6'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'judgment',
+    cooldownGroup: 'snjp_tie_1',
+    ambiguityScore: 0.2,
+    qualityScore: 0.84,
+    phaseHints: ['B'],
+    transitions: symmetricTransitions({ SN: 0.4, JP: 0.6 }, { '6': 0.24 })
+  }),
+  buildQuestion({
+    id: 'bank_b_03',
+    text_ko: '주말 계획이 비면 즉흥 약속보다 혼자 정리 시간을 먼저 잡는다.',
+    rationale_short: 'IE/JP 경합 분리',
+    mbtiAxes: ['IE', 'JP'],
+    enneagram: ['5', '9'],
+    mode: 'tie_break',
+    context: 'private',
+    pattern: 'behavior',
+    cooldownGroup: 'ie_tie_1',
+    ambiguityScore: 0.16,
+    qualityScore: 0.88,
+    phaseHints: ['B'],
+    transitions: symmetricTransitions({ IE: 0.78, JP: 0.35 }, { '5': 0.18, '9': 0.16 })
+  }),
+  buildQuestion({
+    id: 'bank_b_04',
+    text_ko: '정보를 설명할 때 큰 방향보다 세부 사실을 먼저 말하는 편이다.',
+    rationale_short: 'SN 경합 분리',
+    mbtiAxes: ['SN'],
+    enneagram: ['6', '1'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'sn_tie_1',
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ SN: 0.9 }, { '6': 0.16, '1': 0.14 })
+  }),
+  buildQuestion({
+    id: 'bank_b_05',
+    text_ko: '결정 직전에는 가능성보다 실행 조건이 맞는지 먼저 본다.',
+    rationale_short: 'SN/JP 실행 분리',
+    mbtiAxes: ['SN', 'JP'],
+    enneagram: ['3', '6'],
+    mode: 'tie_break',
+    context: 'daily',
+    pattern: 'judgment',
+    cooldownGroup: 'snjp_tie_2',
+    ambiguityScore: 0.18,
+    qualityScore: 0.86,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ SN: 0.55, JP: 0.35 }, { '3': 0.1, '6': 0.14 })
+  }),
+  buildQuestion({
+    id: 'bank_b_06',
+    text_ko: '친구 고민을 들으면 공감보다 해결 순서를 먼저 떠올리는 편이다.',
+    rationale_short: 'TF 경합 분리',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '3'],
+    mode: 'tie_break',
+    context: 'private',
+    pattern: 'internal',
+    cooldownGroup: 'tf_tie_2',
+    ambiguityScore: 0.15,
+    qualityScore: 0.9,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ TF: 0.82 }, { '1': 0.12, '3': 0.14 })
+  }),
+  buildQuestion({
+    id: 'bank_b_07',
+    text_ko: '팀에서 아이디어를 낼 때 완성형보다 초안부터 먼저 공유하는 편이다.',
+    rationale_short: 'IE/JP 공개 반응 분리',
+    mbtiAxes: ['IE', 'JP'],
+    enneagram: ['7', '3'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'ie_tie_2',
+    ambiguityScore: 0.2,
+    qualityScore: 0.82,
+    phaseHints: ['B'],
+    transitions: symmetricTransitions({ IE: -0.45, JP: -0.52 }, { '7': 0.18, '3': 0.14 })
+  }),
+  buildQuestion({
+    id: 'bank_b_08',
+    text_ko: '정리되지 않은 상태로 시작하는 것보다 준비가 늦어도 구조를 맞춘다.',
+    rationale_short: 'JP 안정성 분리',
+    mbtiAxes: ['JP'],
+    enneagram: ['1', '6'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'judgment',
+    cooldownGroup: 'jp_tie_1',
+    ambiguityScore: 0.12,
+    qualityScore: 0.92,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ JP: 0.9 }, { '1': 0.2, '6': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_b_09',
+    text_ko: '관계가 걸려 있어도 기준이 어긋나면 그대로 지적하는 편이다.',
+    rationale_short: 'TF 강도 확인',
+    mbtiAxes: ['TF'],
+    enneagram: ['8', '1'],
+    mode: 'tie_break',
+    context: 'private',
+    pattern: 'behavior',
+    cooldownGroup: 'tf_tie_3',
+    ambiguityScore: 0.18,
+    qualityScore: 0.85,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ TF: 0.88 }, { '8': 0.18, '1': 0.1 })
+  }),
+  buildQuestion({
+    id: 'bank_b_10',
+    text_ko: '대화가 길어지면 생각을 정리하려고 잠깐 거리를 두는 편이다.',
+    rationale_short: 'IE 회복 리듬 확인',
+    mbtiAxes: ['IE'],
+    enneagram: ['5', '4'],
+    mode: 'tie_break',
+    context: 'daily',
+    pattern: 'internal',
+    cooldownGroup: 'ie_tie_3',
+    ambiguityScore: 0.16,
+    qualityScore: 0.87,
+    phaseHints: ['B'],
+    transitions: symmetricTransitions({ IE: 0.82 }, { '5': 0.2, '4': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_b_11',
+    text_ko: '상황이 바뀌면 계획 수정표를 바로 만들어 흐름을 다시 맞춘다.',
+    rationale_short: 'JP 조정 방식 분리',
+    mbtiAxes: ['JP'],
+    enneagram: ['1', '3'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'jp_tie_2',
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ JP: 0.84 }, { '1': 0.18, '3': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_b_12',
+    text_ko: '새로운 방식을 볼 때 구체 장면보다 원리부터 이해하려는 편이다.',
+    rationale_short: 'SN 재확인',
+    mbtiAxes: ['SN'],
+    enneagram: ['5', '7'],
+    mode: 'tie_break',
+    context: 'daily',
+    pattern: 'judgment',
+    cooldownGroup: 'sn_tie_2',
+    ambiguityScore: 0.15,
+    qualityScore: 0.9,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ SN: -0.84 }, { '5': 0.2, '7': 0.14 })
+  }),
+
+  buildQuestion({
+    id: 'bank_c_01',
+    text_ko: '겉으로 공감해도 실제 판단은 해결 순서로 정리되는 편이다.',
+    rationale_short: '겉/속 불일치 검증',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '3', '5'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_1',
+    ambiguityScore: 0.24,
+    qualityScore: 0.82,
+    expressionSignal: 0.7,
+    judgmentSignal: 0.82,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ TF: 0.74 }, { '1': 0.14, '3': 0.1, '5': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_c_02',
+    text_ko: '맞춰서 대화해도 속으로는 기준의 타당성을 계속 확인하는 편이다.',
+    rationale_short: '내적 판단 검증',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '6'],
+    mode: 'validation',
+    context: 'private',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_2',
+    ambiguityScore: 0.24,
+    qualityScore: 0.8,
+    expressionSignal: 0.65,
+    judgmentSignal: 0.84,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ TF: 0.7 }, { '1': 0.14, '6': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_c_03',
+    text_ko: '유연해 보이려 해도 최종 선택은 익숙한 방식으로 돌아오는 편이다.',
+    rationale_short: '표면 유연성 검증',
+    mbtiAxes: ['JP'],
+    enneagram: ['6', '9'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_3',
+    ambiguityScore: 0.22,
+    qualityScore: 0.82,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ JP: 0.7 }, { '6': 0.14, '9': 0.14 })
+  }),
+  buildQuestion({
+    id: 'bank_c_04',
+    text_ko: '밝게 반응해도 결정 직전에는 혼자 정리 시간이 꼭 필요한 편이다.',
+    rationale_short: '표현/회복 분리 검증',
+    mbtiAxes: ['IE'],
+    enneagram: ['5', '9'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_4',
+    ambiguityScore: 0.22,
+    qualityScore: 0.84,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ IE: 0.72 }, { '5': 0.18, '9': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_c_05',
+    text_ko: '사적인 갈등에서도 감정 공감보다 원인 분해가 먼저 떠오르는 편이다.',
+    rationale_short: '맥락 전이 검증',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '5'],
+    mode: 'validation',
+    context: 'private',
+    pattern: 'judgment',
+    cooldownGroup: 'val_tf_1',
+    ambiguityScore: 0.18,
+    qualityScore: 0.86,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ TF: 0.76 }, { '1': 0.14, '5': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_c_06',
+    text_ko: '업무에서는 공감 표현을 해도 실행 체크리스트를 끝까지 붙드는 편이다.',
+    rationale_short: '실행 일관성 검증',
+    mbtiAxes: ['JP', 'TF'],
+    enneagram: ['1', '3'],
+    mode: 'validation',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'val_exec_1',
+    ambiguityScore: 0.2,
+    qualityScore: 0.86,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ JP: 0.56, TF: 0.4 }, { '1': 0.16, '3': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_c_07',
+    text_ko: '즉흥적으로 보이는 날에도 중요한 결정은 기준표를 다시 확인하는 편이다.',
+    rationale_short: '즉흥/기준 분리 검증',
+    mbtiAxes: ['JP'],
+    enneagram: ['6', '1'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_5',
+    ambiguityScore: 0.21,
+    qualityScore: 0.82,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ JP: 0.64 }, { '6': 0.14, '1': 0.1 })
+  }),
+  buildQuestion({
+    id: 'bank_c_08',
+    text_ko: '겉으로는 맞춰도 결론은 내 기준과 근거가 맞아야 선택하는 편이다.',
+    rationale_short: '판단 고정성 검증',
+    mbtiAxes: ['TF'],
+    enneagram: ['1', '8'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_6',
+    ambiguityScore: 0.23,
+    qualityScore: 0.81,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ TF: 0.74 }, { '1': 0.14, '8': 0.14 })
+  })
 ]
 
-const incongruenceFollowupPool: Array<Omit<Question, 'id'>> = [
-  {
-    text_ko: '겉으로 공감 표현을 해도 실제 판단은 해결 순서로 정리되는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['1', '3', '5'] },
-    rationale_short: '표현과 판단 기준 불일치 확인',
-    scoring: { mbti: { TF: 0.8 }, enneagram: { '1': 0.2, '3': 0.15, '5': 0.15 } }
-  },
-  {
-    text_ko: '상대에게 맞춰 말해도 속으로는 기준의 타당성을 먼저 따지는 편이다.',
-    targets: { mbtiAxes: ['TF'], enneagram: ['1', '6'] },
-    rationale_short: '관계 배려 표현과 내부 판단 분리 확인',
-    scoring: { mbti: { TF: 0.75 }, enneagram: { '1': 0.2, '6': 0.15 } }
-  },
-  {
-    text_ko: '겉으로는 유연하게 보여도 실제 선택은 익숙한 방식으로 돌아오는 편이다.',
-    targets: { mbtiAxes: ['JP'], enneagram: ['6', '9'] },
-    rationale_short: '표면 유연성 vs 실제 선택 고정성 확인',
-    scoring: { mbti: { JP: 0.75 }, enneagram: { '6': 0.2, '9': 0.2 } }
-  },
-  {
-    text_ko: '밝게 반응해도 속으로는 혼자 정리할 시간이 꼭 필요한 편이다.',
-    targets: { mbtiAxes: ['IE'], enneagram: ['5', '9'] },
-    rationale_short: '외부 표현과 에너지 회복 방식 불일치 확인',
-    scoring: { mbti: { IE: 0.75 }, enneagram: { '5': 0.2, '9': 0.2 } }
-  }
+const BANK_BY_ID = new Map(QUESTION_BANK.map(question => [question.id, question]))
+
+const INITIAL_QUESTION_IDS = [
+  'bank_a_01',
+  'bank_a_03',
+  'bank_a_05',
+  'bank_a_07',
+  'bank_a_04',
+  'bank_a_06'
 ]
 
-const makeAutoId = () => `q_auto_${randomUUID().slice(0, 8)}`
+export const curatedQuestionCount = () => BASE_CURATED_QUESTION_COUNT
 
 export const getCuratedQuestionByIndex = (index: number): Question | null => {
-  if (index < 0 || index >= curatedQuestions.length) {
+  if (index < 0 || index >= INITIAL_QUESTION_IDS.length) {
     return null
   }
-
-  return structuredClone(curatedQuestions[index])
+  const id = INITIAL_QUESTION_IDS[index]
+  const found = BANK_BY_ID.get(id)
+  return found ? cloneQuestion(found) : null
 }
 
 export const sanitizeQuestionForClient = (question: Question) => ({
@@ -227,376 +549,260 @@ export const sanitizeQuestionForClient = (question: Question) => ({
   rationale_short: question.rationale_short
 })
 
-const usedQuestionIds = (session: SessionState) => new Set(session.questionHistory.map(q => q.id))
+const safeMeta = (question: Question) => {
+  return question.meta || {
+    context: 'daily' as QuestionContext,
+    mode: 'tie_break' as QuestionMode,
+    pattern: 'behavior' as QuestionPattern,
+    cooldownGroup: 'unknown',
+    ambiguityScore: 0.3,
+    qualityScore: 0.6
+  }
+}
 
-export const ensureQuestionScoring = (question: Question): Question => {
-  const safeQuestion = structuredClone(question)
-  safeQuestion.scoring ||= {}
-  safeQuestion.scoring.mbti ||= {}
-  safeQuestion.scoring.enneagram ||= {}
+const getAnsweredQuestionByIndex = (session: SessionState, index: number) => {
+  return session.questionHistory[index]
+}
 
-  for (const axis of safeQuestion.targets.mbtiAxes) {
-    if (safeQuestion.scoring.mbti[axis] === undefined) {
-      safeQuestion.scoring.mbti[axis] = axis === 'SN' ? -0.85 : 0.85
+export const countValidationAnswers = (session: SessionState): number => {
+  let count = 0
+  for (let index = 0; index < session.answers.length; index += 1) {
+    const question = getAnsweredQuestionByIndex(session, index)
+    if (question?.meta?.mode === 'validation') {
+      count += 1
     }
   }
+  return count
+}
 
-  for (const enneagramType of safeQuestion.targets.enneagram) {
-    if (safeQuestion.scoring.enneagram[enneagramType] === undefined) {
-      safeQuestion.scoring.enneagram[enneagramType] = 0.3
+const countRecentMode = (session: SessionState, mode: QuestionMode, recent = 6): number => {
+  let count = 0
+  const from = Math.max(0, session.answers.length - recent)
+  for (let index = from; index < session.answers.length; index += 1) {
+    const question = getAnsweredQuestionByIndex(session, index)
+    if (question?.meta?.mode === mode) {
+      count += 1
     }
   }
-
-  return safeQuestion
+  return count
 }
 
-const makeAxisQuestion = (axis: MbtiAxis): Question => {
-  const template = axisFallback[axis]
-  return {
-    ...structuredClone(template),
-    id: makeAutoId()
+export const determinePhase = (session: SessionState, maxQuestions: number): QuestionPhase => {
+  const answerCount = session.answers.length
+  const uncertainAxisCount = Object.values(session.distribution.axisScores)
+    .filter(value => Math.abs(value) < 0.58)
+    .length
+
+  if (answerCount < 6) return 'A'
+
+  if (answerCount >= Math.min(maxQuestions - 4, 10) || uncertainAxisCount <= 1) {
+    return 'C'
   }
+
+  return 'B'
 }
 
-const makeEnneaQuestion = (type: string): Question => {
-  const template = enneagramFallbackQuestions[type] || enneagramFallbackQuestions['5']
-  return {
-    ...structuredClone(template),
-    id: makeAutoId()
-  }
+const isTypeFirstLetter = (type: MbtiType, axis: MbtiAxis) => {
+  const index = AXIS_INDEX[axis]
+  const firstLetter = AXIS_LETTERS[axis][0]
+  return type[index] === firstLetter
 }
 
-const findConflictAxis = (distribution: DistributionState): MbtiAxis | null => {
-  for (const conflict of distribution.conflicts) {
-    if (conflict.includes('IE')) return 'IE'
-    if (conflict.includes('SN')) return 'SN'
-    if (conflict.includes('TF')) return 'TF'
-    if (conflict.includes('JP')) return 'JP'
-  }
-  return null
+const getMostUncertainAxis = (session: SessionState): MbtiAxis => {
+  const entries = Object.entries(session.distribution.axisScores) as Array<[MbtiAxis, number]>
+  entries.sort((left, right) => Math.abs(left[1]) - Math.abs(right[1]))
+  return entries[0]?.[0] || 'IE'
 }
 
-export const shouldUseIncongruenceFollowup = (session: SessionState) => {
-  const tfEvidence = session.distribution.axisEvidence.TF
-  const tfMixed = tfEvidence.positive >= 2 && tfEvidence.negative >= 2
-  return session.distribution.conflicts.length > 0 || tfMixed
+const calcAxisUncertainty = (session: SessionState, axis: MbtiAxis) => {
+  const axisScore = Math.abs(session.distribution.axisScores[axis] || 0)
+  return 1 - Math.min(1, axisScore / 1.6)
 }
 
-export const buildDeterministicAdaptiveQuestion = (session: SessionState): Question => {
-  const usedIds = usedQuestionIds(session)
-  const conflictAxis = findConflictAxis(session.distribution)
-
-  let candidate: Question
-  if (conflictAxis && shouldUseIncongruenceFollowup(session)) {
-    candidate = getCuratedFallbackQuestion(session, { allowIncongruence: true })
-  }
-  else if (conflictAxis) {
-    candidate = makeAxisQuestion(conflictAxis)
-  }
-  else if (session.answers.length % 2 === 0) {
-    candidate = makeAxisQuestion(getMostUncertainAxis(session.distribution))
-  }
-  else {
-    const topEnnea = getTopCandidates(session.distribution.enneagramProbs9, 1)[0]
-    candidate = makeEnneaQuestion(topEnnea?.type || '5')
-  }
-
-  while (usedIds.has(candidate.id)) {
-    candidate.id = makeAutoId()
-  }
-
-  return ensureQuestionScoring(candidate)
+const calcMbtiSplit = (mbtiTop: TypeCandidate<MbtiType>[], axis: MbtiAxis) => {
+  const firstProb = mbtiTop
+    .filter(candidate => isTypeFirstLetter(candidate.type, axis))
+    .reduce((acc, candidate) => acc + candidate.p, 0)
+  return 1 - Math.min(1, Math.abs(0.5 - firstProb) * 2)
 }
 
-export const curatedQuestionCount = () => BASE_CURATED_QUESTION_COUNT
+const calcEnneaSplit = (enneaTop: TypeCandidate<string>[], targets: EnneagramType[]) => {
+  if (targets.length === 0) return 0
 
-const FORBIDDEN_EXPRESSIONS = ['보통', '가끔', '대체로', '상황에 따라', '사람마다', '케바케', '종종', '때때로']
-const ABSTRACT_PATTERNS = [
-  /성격이란/,
-  /정의/,
-  /본질/,
-  /의미는?/,
-  /일반적으로/,
-  /보편적으로/,
-  /누구나/,
-  /모든 사람/
-]
-const INTERROGATIVE_PATTERNS = [/왜/, /무엇/, /어떻게/, /언제/, /어디/, /누구/, /몇/]
-const AMBIGUOUS_CONTEXT_PATTERNS = [/갈등 회의/, /중요한 상황/, /복잡한 상황/, /민감한 상황/, /어떤 상황/]
-const SOCIAL_DESIRABILITY_PATTERNS = [
-  /반드시/,
-  /당연히/,
-  /무조건/,
-  /올바른/,
-  /옳은/,
-  /착한/,
-  /예의/,
-  /도와야/,
-  /배려해야/
-]
-const COMPARISON_MARKERS = ['보다', '대신', '하지만', '반면', '동시에', '한편', '면서도']
-const SCENARIO_MARKERS = [
-  '하면',
-  '할 때',
-  '해도',
-  '보여도',
-  '때도',
-  '때',
-  '상황',
-  '모임',
-  '약속',
-  '프로젝트',
-  '과제',
-  '갈등',
-  '결정',
-  '휴일',
-  '팀',
-  '친구',
-  '일정'
-]
-const ACTION_PATTERN = /(한다|하는|된다|되는|지킨다|찾는다|정리한다|정리되는|확보한다|점검한다|고른다|늘린다|시작한다|챙긴다|떠오른다|떠올린다|밀어붙인다|움직인다|돌아온다|따진다|잡는다|말한다)/
-const INTERNAL_MARKERS = ['속으로', '마음속', '내심', '불안', '긴장', '안심', '편하다', '부담']
-const JUDGMENT_MARKERS = ['기준', '논리', '근거', '타당', '원칙', '정합', '우선']
-const INCONGRUENCE_MARKERS = ['겉으로', '속으로', '실제로', '보여도']
-const WORK_CONTEXT_MARKERS = ['업무', '회사', '팀', '프로젝트', '회의', '협업', '보고']
-const PRIVATE_CONTEXT_MARKERS = ['친구', '가족', '연인', '지인', '가까운 사람']
-const GENERAL_CONTEXT_MARKERS = ['일상', '평소', '갈등 상황', '보통 하루']
-const LENGTH_MIN = 18
-const LENGTH_MAX = 70
-const MAX_WORD_TOKENS = 20
-const MAX_COMPARISON_MARKERS = 2
-const SIMILARITY_THRESHOLD = 0.72
+  const targetSet = new Set(targets)
+  const mass = enneaTop
+    .filter(candidate => targetSet.has(candidate.type as EnneagramType))
+    .reduce((acc, candidate) => acc + candidate.p, 0)
 
-const normalizeText = (text: string) => text.replace(/[^가-힣a-zA-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
-
-const tokenize = (text: string) => normalizeText(text).split(' ').filter(token => token.length >= 2)
-
-const tokenOverlap = (a: string, b: string) => {
-  const aSet = new Set(tokenize(a))
-  const bSet = new Set(tokenize(b))
-
-  if (aSet.size === 0 || bSet.size === 0) return 0
-
-  let intersection = 0
-  for (const token of aSet) {
-    if (bSet.has(token)) intersection += 1
-  }
-
-  const union = new Set([...aSet, ...bSet]).size
-  const overlapByMin = intersection / Math.min(aSet.size, bSet.size)
-  const jaccard = union > 0 ? intersection / union : 0
-
-  return Math.max(overlapByMin, jaccard)
+  return 1 - Math.min(1, Math.abs(0.5 - mass) * 2)
 }
 
-const getMaxSimilarity = (text: string, recentQuestions: Question[]) => {
-  if (recentQuestions.length === 0) return 0
-
-  const normalized = normalizeText(text)
-  let maxScore = 0
-
-  for (const recentQuestion of recentQuestions) {
-    const recentText = recentQuestion.text_ko
-    const recentNormalized = normalizeText(recentText)
-
-    if (!recentNormalized) continue
-
-    if (normalized.includes(recentNormalized) || recentNormalized.includes(normalized)) {
-      return 1
-    }
-
-    const score = tokenOverlap(text, recentText)
-    if (score > maxScore) {
-      maxScore = score
-    }
-  }
-
-  return maxScore
+const isAllowedInPhase = (mode: QuestionMode, phase: QuestionPhase) => {
+  return PHASE_MODE_ALLOW[phase].includes(mode)
 }
 
-export interface QuestionQualityValidation {
-  valid: boolean
-  reasons: string[]
-  similarity: number
-  ambiguityFlags: string[]
+const collectRecentQuestions = (session: SessionState, count: number) => {
+  return session.questionHistory.slice(-count)
 }
 
-export interface QuestionValidationOptions {
-  allowIncongruence?: boolean
-}
-
-const includesAny = (text: string, markers: string[]) => markers.some(marker => text.includes(marker))
-
-const categoryCount = (text: string) => {
-  const hasBehavior = ACTION_PATTERN.test(text)
-  const hasInternal = includesAny(text, INTERNAL_MARKERS)
-  const hasJudgment = includesAny(text, JUDGMENT_MARKERS)
-  return Number(hasBehavior) + Number(hasInternal) + Number(hasJudgment)
-}
-
-const detectContextScope = (text: string): 'work' | 'private' | 'general' | 'none' | 'mixed' => {
-  const hasWork = includesAny(text, WORK_CONTEXT_MARKERS)
-  const hasPrivate = includesAny(text, PRIVATE_CONTEXT_MARKERS)
-  const hasGeneral = includesAny(text, GENERAL_CONTEXT_MARKERS)
-  const activeCount = Number(hasWork) + Number(hasPrivate) + Number(hasGeneral)
-
-  if (activeCount === 0) return 'none'
-  if (activeCount >= 2) return 'mixed'
-  if (hasWork) return 'work'
-  if (hasPrivate) return 'private'
-  return 'general'
-}
-
-export const validateGeneratedQuestionQuality = (
-  question: Question,
-  recentQuestions: Question[],
-  options: QuestionValidationOptions = {}
-): QuestionQualityValidation => {
-  const reasons: string[] = []
-  const ambiguityFlags: string[] = []
-  const text = (question.text_ko || '').trim()
-  const normalized = normalizeText(text)
-  const tokenCount = tokenize(text).length
-  const comparisonCount = COMPARISON_MARKERS.filter(marker => text.includes(marker)).length
-  const mixedCategoryCount = categoryCount(text)
-  const contextScope = detectContextScope(text)
-  const hasIncongruencePattern = INCONGRUENCE_MARKERS.filter(marker => text.includes(marker)).length >= 2
-
-  if (!question.targets?.mbtiAxes || question.targets.mbtiAxes.length !== 1) {
-    reasons.push('mbti_axis_must_be_single')
-  }
-
-  if (text.length < LENGTH_MIN || text.length > LENGTH_MAX) {
-    reasons.push(`length_out_of_range:${text.length}`)
-  }
-
-  if (tokenCount > MAX_WORD_TOKENS) {
-    reasons.push(`too_wordy:${tokenCount}`)
-  }
-
-  if (FORBIDDEN_EXPRESSIONS.some(word => text.includes(word))) {
-    reasons.push('contains_forbidden_expression')
-  }
-
-  if (SOCIAL_DESIRABILITY_PATTERNS.some(pattern => pattern.test(text))) {
-    reasons.push('social_desirability_bias')
-  }
-
-  if (INTERROGATIVE_PATTERNS.some(pattern => pattern.test(text)) || text.includes('?')) {
-    reasons.push('not_yes_no_style')
-  }
-
-  if (ABSTRACT_PATTERNS.some(pattern => pattern.test(text))) {
-    reasons.push('too_abstract_definition_style')
-  }
-
-  if (AMBIGUOUS_CONTEXT_PATTERNS.some(pattern => pattern.test(text))) {
-    reasons.push('ambiguous_context_phrase')
-    ambiguityFlags.push('ambiguous_context_phrase')
-  }
-
-  if (!normalized) {
-    reasons.push('empty_or_invalid_text')
-  }
-
-  if (comparisonCount > MAX_COMPARISON_MARKERS) {
-    reasons.push(`too_many_comparisons:${comparisonCount}`)
-  }
-
-  if (comparisonCount >= 1 && mixedCategoryCount >= 2 && !options.allowIncongruence) {
-    reasons.push('comparison_cross_axis_mix')
-  }
-
-  if (mixedCategoryCount >= 3) {
-    reasons.push('too_many_psych_dimensions')
-  }
-
-  if (mixedCategoryCount >= 2 && !options.allowIncongruence) {
-    reasons.push('mixed_behavior_internal_judgment')
-  }
-
-  if (options.allowIncongruence && mixedCategoryCount >= 2 && !hasIncongruencePattern) {
-    reasons.push('incongruence_pattern_not_clear')
-  }
-
-  if (!options.allowIncongruence && hasIncongruencePattern) {
-    reasons.push('incongruence_not_allowed_in_normal_mode')
-  }
-
-  if (contextScope === 'mixed') {
-    reasons.push('mixed_context_scope')
-    ambiguityFlags.push('mixed_context_scope')
-  }
-
-  if (text.includes('갈등') && contextScope === 'none' && !text.includes('갈등 상황')) {
-    reasons.push('conflict_context_not_fixed')
-    ambiguityFlags.push('conflict_context_not_fixed')
-  }
-
-  const hasScenario = SCENARIO_MARKERS.some(marker => text.includes(marker))
-  const hasAction = ACTION_PATTERN.test(text)
-
-  if (!hasScenario || !hasAction) {
-    reasons.push('insufficient_behavioral_specificity')
-  }
-
-  const similarity = getMaxSimilarity(text, recentQuestions)
-  if (similarity >= SIMILARITY_THRESHOLD) {
-    reasons.push(`too_similar_to_recent:${similarity.toFixed(2)}`)
-  }
-
-  return {
-    valid: reasons.length === 0,
-    reasons,
-    similarity,
-    ambiguityFlags
-  }
-}
-
-interface CuratedFallbackOptions {
-  allowIncongruence?: boolean
-}
-
-const getFallbackPool = (allowIncongruence: boolean) =>
-  allowIncongruence ? incongruenceFollowupPool : curatedFallbackPool
-
-export const getCuratedFallbackQuestion = (
+const filterBankCandidates = (
   session: SessionState,
-  options: CuratedFallbackOptions = {}
-): Question => {
-  const allowIncongruence = !!options.allowIncongruence
-  const pool = getFallbackPool(allowIncongruence)
-  const seed = session.answers.length % pool.length
-  const recent = session.questionHistory.slice(-8)
+  phase: QuestionPhase,
+  relaxed: boolean
+): Question[] => {
+  const askedIds = new Set(session.questionHistory.map(question => question.id))
+  const recentQuestions = collectRecentQuestions(session, 3)
+  const recentGroups = new Set(recentQuestions.map(question => question.meta?.cooldownGroup).filter(Boolean))
+  const lastContext = recentQuestions[recentQuestions.length - 1]?.meta?.context
+  const lastPattern = recentQuestions[recentQuestions.length - 1]?.meta?.pattern
 
-  for (let offset = 0; offset < pool.length; offset += 1) {
-    const candidate = pool[(seed + offset) % pool.length]
-    const nextQuestion = ensureQuestionScoring({
-      ...structuredClone(candidate),
-      id: makeAutoId()
-    })
+  return QUESTION_BANK.filter((question) => {
+    if (askedIds.has(question.id)) return false
 
-    const check = validateGeneratedQuestionQuality(nextQuestion, recent, {
-      allowIncongruence
-    })
-    if (check.valid && check.similarity < SIMILARITY_THRESHOLD) {
-      return nextQuestion
+    const meta = safeMeta(question)
+    if (!isAllowedInPhase(meta.mode, phase)) return false
+
+    if (meta.phaseHints && meta.phaseHints.length > 0 && !meta.phaseHints.includes(phase)) {
+      return false
     }
-  }
 
-  return ensureQuestionScoring({
-    ...structuredClone(pool[seed]),
-    id: makeAutoId()
+    if (!relaxed) {
+      if (recentGroups.has(meta.cooldownGroup)) return false
+      if (lastContext && meta.context === lastContext && meta.mode !== 'validation') return false
+      if (lastPattern && meta.pattern === lastPattern && meta.mode === 'axis_scan') return false
+    }
+
+    return true
   })
 }
 
-export const validateQuestionText = (text: string): boolean => {
-  const pseudoQuestion: Question = {
-    id: 'tmp',
-    text_ko: text,
-    targets: { mbtiAxes: ['IE'], enneagram: ['5'] },
-    rationale_short: 'tmp'
+const scoreCandidate = (
+  question: Question,
+  session: SessionState,
+  phase: QuestionPhase,
+  mbtiTop: TypeCandidate<MbtiType>[],
+  enneaTop: TypeCandidate<string>[]
+): QuestionSelectionCandidate => {
+  const meta = safeMeta(question)
+  const uncertainAxis = getMostUncertainAxis(session)
+
+  const axisUncertainty = question.targets.mbtiAxes.length === 0
+    ? 0
+    : question.targets.mbtiAxes
+      .map(axis => calcAxisUncertainty(session, axis))
+      .reduce((acc, current) => acc + current, 0) / question.targets.mbtiAxes.length
+
+  const mbtiSplit = question.targets.mbtiAxes.length === 0
+    ? 0
+    : question.targets.mbtiAxes
+      .map(axis => calcMbtiSplit(mbtiTop, axis))
+      .reduce((acc, current) => acc + current, 0) / question.targets.mbtiAxes.length
+
+  const enneaSplit = calcEnneaSplit(enneaTop, question.targets.enneagram)
+
+  let noveltyPenalty = 0
+  const recentQuestions = collectRecentQuestions(session, 3)
+  const recentGroups = new Set(recentQuestions.map(item => item.meta?.cooldownGroup))
+  const last = recentQuestions[recentQuestions.length - 1]
+  if (recentGroups.has(meta.cooldownGroup)) noveltyPenalty += 0.26
+  if (last?.meta?.context === meta.context) noveltyPenalty += 0.1
+  if (last?.meta?.pattern === meta.pattern) noveltyPenalty += 0.08
+
+  const ambiguityPenalty = meta.ambiguityScore * 0.45
+  const qualityBoost = meta.qualityScore * 0.35
+
+  let phaseBonus = 0
+  if (phase === 'A' && meta.mode === 'axis_scan') phaseBonus += 0.28
+  if (phase === 'B' && meta.mode === 'tie_break') phaseBonus += 0.25
+  if (phase === 'C' && meta.mode === 'validation') phaseBonus += 0.34
+  if (question.targets.mbtiAxes.includes(uncertainAxis)) phaseBonus += 0.24
+  if (phase === 'C' && countRecentMode(session, 'validation', 5) === 0 && meta.mode === 'validation') {
+    phaseBonus += 0.14
   }
 
-  return validateGeneratedQuestionQuality(pseudoQuestion, []).valid
+  const score =
+    axisUncertainty * 1.9
+    + mbtiSplit * 1.8
+    + enneaSplit * 1.2
+    + qualityBoost
+    + phaseBonus
+    - noveltyPenalty
+    - ambiguityPenalty
+
+  return {
+    id: question.id,
+    score: Math.round(score * 1000) / 1000,
+    breakdown: {
+      axisUncertainty: Math.round(axisUncertainty * 1000) / 1000,
+      mbtiSplit: Math.round(mbtiSplit * 1000) / 1000,
+      enneaSplit: Math.round(enneaSplit * 1000) / 1000,
+      noveltyPenalty: Math.round(noveltyPenalty * 1000) / 1000,
+      ambiguityPenalty: Math.round(ambiguityPenalty * 1000) / 1000,
+      qualityBoost: Math.round(qualityBoost * 1000) / 1000,
+      phaseBonus: Math.round(phaseBonus * 1000) / 1000
+    }
+  }
 }
+
+const selectBestCandidate = (session: SessionState, phase: QuestionPhase) => {
+  const mbtiTop = getTopCandidates(session.distribution.mbtiProbs16, 4)
+  const enneaTop = getTopCandidates(session.distribution.enneagramProbs9, 4)
+
+  let candidates = filterBankCandidates(session, phase, false)
+  if (candidates.length === 0) {
+    candidates = filterBankCandidates(session, phase, true)
+  }
+
+  if (candidates.length === 0) {
+    const askedIds = new Set(session.questionHistory.map(question => question.id))
+    candidates = QUESTION_BANK.filter(question => !askedIds.has(question.id))
+  }
+
+  if (candidates.length === 0) {
+    candidates = QUESTION_BANK
+  }
+
+  const ranked = candidates
+    .map(question => ({ question, candidate: scoreCandidate(question, session, phase, mbtiTop, enneaTop) }))
+    .sort((left, right) => right.candidate.score - left.candidate.score)
+
+  const best = ranked[0]
+  if (!best) {
+    const fallback = QUESTION_BANK[0]
+    return {
+      question: cloneQuestion(fallback),
+      ranked: [],
+      reason: 'fallback:first_bank_question'
+    }
+  }
+
+  const reason = [
+    `phase=${phase}`,
+    `id=${best.question.id}`,
+    `score=${best.candidate.score}`,
+    `mode=${safeMeta(best.question).mode}`,
+    `context=${safeMeta(best.question).context}`
+  ].join(' | ')
+
+  return {
+    question: cloneQuestion(best.question),
+    ranked: ranked.slice(0, 5).map(item => item.candidate),
+    reason
+  }
+}
+
+export const selectNextQuestionFromBank = (
+  session: SessionState,
+  maxQuestions: number
+): QuestionSelectionResult => {
+  const phase = determinePhase(session, maxQuestions)
+  const selected = selectBestCandidate(session, phase)
+
+  return {
+    question: selected.question,
+    phase,
+    reason: selected.reason,
+    ranked: selected.ranked
+  }
+}
+

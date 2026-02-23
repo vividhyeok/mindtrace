@@ -136,3 +136,8 @@ mindtrace/
   - 영향 범위(파일/기능): `server/utils/auth.ts`, `server/utils/store.ts`, `server/utils/error-codes.ts`, `server/utils/observability.ts`, `server/api/session/[id].get.ts`, `server/api/start.post.ts`, `server/api/answer.post.ts`, `server/api/finalize.post.ts`, `server/api/result/[id].get.ts`, `composables/useApiClient.ts`, `pages/test.vue`, `pages/index.vue`, `types/mindtrace.ts`
   - in-memory 세션 특성: dev/hot reload 또는 서버 재시작 시 `authTokenStore/sessionStore`가 초기화되어 기존 토큰/세션이 유효하지 않을 수 있음. 이 경우 새 세션 시작 또는 초대코드 재입력이 필요.
   - 다음 액션: Vercel 배포 환경에서 401 reason code 비율(`AUTH_TOKEN_INVALID` vs `SESSION_NOT_FOUND`)을 관찰해 세션 영속화(KV/Redis) 우선순위 확정
+- 2026-02-23 20:10:56 KST
+  - 변경 요약: 런타임 LLM 질문 생성 경로를 제거하고, 문항 뱅크 기반 질문 선택 엔진(아키네이터 스타일)으로 전환. 매 응답은 deterministic 점수 업데이트만 수행하고, 다음 문항은 후보 분리 점수(축 불확실성/MBTI 분리/Enneagram 분리/중복 패널티/모호성 패널티/품질 가중치)로 선택하도록 재설계. Phase A/B/C 및 validation 기반 조기 종료 게이트 추가.
+  - 영향 범위(파일/기능): `server/utils/questions.ts`(문항 뱅크+선택 엔진), `server/utils/probability.ts`(yes/no 전이 기반 업데이트/조기종료 게이트), `server/api/answer.post.ts`(selection-centric 처리), `server/utils/inference.ts`(finalize 전용으로 축소), `types/mindtrace.ts`(문항 메타/phase 타입), `server/api/start.post.ts`, `server/utils/config.ts`, `nuxt.config.ts`, `.env.example`, `pages/test.vue`
+  - in-memory 세션 특성: 질문 엔진이 빨라져도 메모리 스토어 특성상 서버 재시작 시 진행 상태가 유실될 수 있음. 운영 배포 시 KV/Redis 영속화가 필요.
+  - 다음 액션: 실사용 로그 기준 `question.select.score` 상위/하위 문항의 분리 효율을 점검해 뱅크 점수 가중치 튜닝, `MAX_QUESTIONS=18~20` 운영값 확정

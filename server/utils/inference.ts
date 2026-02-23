@@ -1,133 +1,25 @@
 import type {
-  DistributionState,
   FinalizeModelOutput,
   FinalReport,
-  MbtiAxis,
   MbtiType,
   PublicQuestion,
   Question,
-  SessionState,
-  UpdateModelOutput,
-  YesNo
+  SessionState
 } from '~/types/mindtrace'
-import {
-  ensureQuestionScoring,
-  getCuratedFallbackQuestion,
-  sanitizeQuestionForClient,
-  shouldUseIncongruenceFollowup,
-  validateGeneratedQuestionQuality
-} from '~/server/utils/questions'
+import { sanitizeQuestionForClient } from '~/server/utils/questions'
 import {
   deriveQuadra,
   deriveWingFromCandidates,
-  getMostUncertainAxis,
   getTopCandidates,
   summarizeDistribution
 } from '~/server/utils/probability'
 import { requestO3Json } from '~/server/utils/openai'
-import { logFull } from '~/server/utils/logger'
-import { MBTI_TYPES, ENNEAGRAM_TYPES } from '~/types/mindtrace'
+import { MBTI_TYPES } from '~/types/mindtrace'
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000
-const DEFAULT_MAX_QUESTION_REGENERATIONS = 2
 
 interface InferenceRequestOptions {
   requestId?: string
-  maxRegenerations?: number
-  promptBudget?: {
-    recentQuestions: number
-    recentAnswers: number
-  }
-}
-
-export interface AdaptiveQuestionGenerationMeta {
-  retryCount: number
-  usedFallback: boolean
-  filterLatencyMs: number
-  promptChars: number
-  historyLength: number
-  recentQuestionCount: number
-  allowIncongruence: boolean
-}
-
-export interface AdaptiveQuestionGenerationResult {
-  question: Question
-  meta: AdaptiveQuestionGenerationMeta
-}
-
-const distributionSummary = (distribution: DistributionState) => ({
-  axisScores: distribution.axisScores,
-  mbtiTop3: getTopCandidates(distribution.mbtiProbs16, 3),
-  enneagramTop3: getTopCandidates(distribution.enneagramProbs9, 3),
-  conflicts: distribution.conflicts
-})
-
-const summarizeRecentAnswers = (session: SessionState, count: number) => {
-  return session.answers.slice(-count).map(answer => ({
-    questionId: answer.questionId,
-    answer: answer.answer,
-    axes: answer.targets.mbtiAxes
-  }))
-}
-
-const nextQuestionSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    id: { type: 'string' },
-    text_ko: { type: 'string' },
-    targets: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        mbtiAxes: {
-          type: 'array',
-          items: { type: 'string', enum: ['IE', 'SN', 'TF', 'JP'] }
-        },
-        enneagram: {
-          type: 'array',
-          items: { type: 'string', enum: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] }
-        }
-      },
-      required: ['mbtiAxes', 'enneagram']
-    },
-    rationale_short: { type: 'string' },
-    scoring: {
-      type: 'object',
-      properties: {
-        mbti: {
-          type: 'object',
-          additionalProperties: { type: 'number' }
-        },
-        enneagram: {
-          type: 'object',
-          additionalProperties: { type: 'number' }
-        }
-      },
-      required: ['mbti', 'enneagram']
-    }
-  },
-  required: ['id', 'text_ko', 'targets', 'rationale_short', 'scoring']
-}
-
-const updateSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    mbtiProbs16: {
-      type: 'object',
-      additionalProperties: { type: 'number' }
-    },
-    enneagramProbs9: {
-      type: 'object',
-      additionalProperties: { type: 'number' }
-    },
-    conflicts: {
-      type: 'array',
-      items: { type: 'string' }
-    }
-  },
-  required: ['mbtiProbs16', 'enneagramProbs9', 'conflicts']
 }
 
 const finalizeSchema = {
@@ -199,237 +91,6 @@ const finalizeSchema = {
   ]
 }
 
-const defaultModelUpdate = (distribution: DistributionState): UpdateModelOutput => ({
-  mbtiProbs16: { ...distribution.mbtiProbs16 },
-  enneagramProbs9: { ...distribution.enneagramProbs9 },
-  conflicts: [...distribution.conflicts]
-})
-
-const normalizeProbMap = <T extends string>(values: Record<T, number>, allowed: readonly T[]): Record<T, number> => {
-  const safe = Object.fromEntries(allowed.map(key => [key, Number(values?.[key] || 0)])) as Record<T, number>
-  const sum = Object.values(safe).reduce((acc, value) => acc + Math.max(0, value), 0)
-  if (sum <= 0) {
-    const fallback = 1 / allowed.length
-    return Object.fromEntries(allowed.map(key => [key, fallback])) as Record<T, number>
-  }
-
-  return Object.fromEntries(
-    allowed.map(key => [key, Math.max(0, safe[key]) / sum])
-  ) as Record<T, number>
-}
-
-export const generateAdaptiveQuestionDetailed = async (
-  session: SessionState,
-  options: InferenceRequestOptions = {}
-): Promise<AdaptiveQuestionGenerationResult> => {
-  const allowIncongruence = shouldUseIncongruenceFollowup(session)
-  const maxRegenerations = Math.max(0, options.maxRegenerations ?? DEFAULT_MAX_QUESTION_REGENERATIONS)
-  const recentQuestionCount = Math.min(options.promptBudget?.recentQuestions ?? 6, 8)
-  const recentAnswerCount = Math.min(options.promptBudget?.recentAnswers ?? 3, 4)
-  const fallback = ensureQuestionScoring(
-    getCuratedFallbackQuestion(session, { allowIncongruence })
-  )
-  const uncertainAxis: MbtiAxis = getMostUncertainAxis(session.distribution)
-  const recentQuestions = session.questionHistory.slice(-recentQuestionCount)
-  const recentQuestionTexts = recentQuestions.map(question => question.text_ko)
-  const recentAnswers = summarizeRecentAnswers(session, recentAnswerCount)
-
-  const system = [
-    'You generate one Korean yes/no scenario question for personality inference.',
-    'Must be answerable with yes/no only (no neutral).',
-    'Question text must be 18~70 Korean characters and concise.',
-    'Use exactly one psychological angle per question: behavior OR internal reaction OR judgment criterion.',
-    'Do not mix outer behavior, inner feeling, and decision criterion in one sentence.',
-    'If situational, lock context clearly to one of: 업무/공식, 사적 관계, 일반 일상.',
-    'Avoid ambiguous context labels like 갈등 회의, 중요한 상황.',
-    'Comparison (A vs B) is allowed only within one axis.',
-    'Avoid moral framing and socially desirable cues.',
-    'Avoid abstract definition statements and avoid translation-like awkward wording.',
-    'Forbidden expressions: 보통, 가끔, 대체로, 상황에 따라, 사람마다, 케바케, 종종, 때때로.',
-    allowIncongruence
-      ? 'Conflict mode is enabled: one incongruence check question is allowed (outer expression vs real judgment), but keep sentence short and concrete.'
-      : 'Conflict mode is disabled: avoid incongruence framing.',
-    'Question must be habit/reaction oriented and concise.',
-    'Return strict JSON only.'
-  ].join(' ')
-
-  const previousFailures: string[] = []
-  let filterLatencyMs = 0
-
-  for (let attempt = 0; attempt <= maxRegenerations; attempt += 1) {
-    const user = [
-      `Current uncertainty axis: ${uncertainAxis}`,
-      `Conflict signals: ${session.distribution.conflicts.join(' | ') || 'none'}`,
-      `Top MBTI: ${JSON.stringify(getTopCandidates(session.distribution.mbtiProbs16, 2))}`,
-      `Top Enneagram: ${JSON.stringify(getTopCandidates(session.distribution.enneagramProbs9, 2))}`,
-      `Recent answers summary: ${JSON.stringify(recentAnswers)}`,
-      `Recent questions (avoid overlap): ${JSON.stringify(recentQuestionTexts)}`,
-      `Question mode: ${allowIncongruence ? 'single_dimension_or_incongruence' : 'single_dimension_only'}`,
-      previousFailures.length > 0
-        ? `Previous filter failures: ${previousFailures.join('; ')}`
-        : 'Previous filter failures: none',
-      'Provide one discriminative question in Korean.',
-      'targets.mbtiAxes must include exactly one axis only.',
-      'scoring.mbti should use IE/SN/TF/JP with positive value meaning yes -> first letter (I/S/T/J).',
-      'scoring.enneagram should contain one to three types with positive weights.',
-      'JSON keys: id, text_ko, targets, rationale_short, scoring.'
-    ].join('\n')
-
-    const modelQuestion = await requestO3Json<Question>({
-      label: 'next_question',
-      system,
-      user,
-      schema: nextQuestionSchema,
-      requestId: options.requestId,
-      fallback: () => fallback,
-      promptMeta: {
-        historyLength: session.answers.length,
-        recentQuestionCount: recentQuestions.length,
-        recentAnswerCount: recentAnswers.length
-      }
-    })
-
-    const ensured = ensureQuestionScoring({
-      ...modelQuestion,
-      id: modelQuestion.id || fallback.id
-    })
-
-    const filterStarted = Date.now()
-    const quality = validateGeneratedQuestionQuality(ensured, recentQuestions, {
-      allowIncongruence
-    })
-    filterLatencyMs += Date.now() - filterStarted
-
-    if (quality.valid) {
-      logFull('question.filter.pass', {
-        requestId: options.requestId || 'n/a',
-        attempt,
-        questionId: ensured.id,
-        text: ensured.text_ko
-      })
-
-      return {
-        question: ensured,
-        meta: {
-          retryCount: attempt,
-          usedFallback: false,
-          filterLatencyMs,
-          promptChars: system.length + user.length,
-          historyLength: session.answers.length,
-          recentQuestionCount: recentQuestions.length,
-          allowIncongruence
-        }
-      }
-    }
-
-    previousFailures.push(`attempt_${attempt}: ${quality.reasons.join(', ')}`)
-    logFull('question.filter.reject', {
-      requestId: options.requestId || 'n/a',
-      attempt,
-      questionId: ensured.id,
-      text: ensured.text_ko,
-      reasons: quality.reasons,
-      similarity: quality.similarity
-    })
-
-    if (quality.ambiguityFlags.length > 0) {
-      logFull('question.ambiguity.flag', {
-        requestId: options.requestId || 'n/a',
-        attempt,
-        questionId: ensured.id,
-        flags: quality.ambiguityFlags,
-        text: ensured.text_ko
-      })
-    }
-
-    if (attempt < maxRegenerations) {
-      logFull('question.filter.retry', {
-        requestId: options.requestId || 'n/a',
-        attemptFrom: attempt,
-        attemptTo: attempt + 1,
-        reasonCount: quality.reasons.length
-      })
-    }
-  }
-
-  logFull('question.filter.fallback', {
-    requestId: options.requestId || 'n/a',
-    regenerationCount: maxRegenerations,
-    fallbackQuestionId: fallback.id,
-    fallbackText: fallback.text_ko,
-    reasonSummary: previousFailures
-  })
-
-  return {
-    question: fallback,
-    meta: {
-      retryCount: maxRegenerations,
-      usedFallback: true,
-      filterLatencyMs,
-      promptChars: 0,
-      historyLength: session.answers.length,
-      recentQuestionCount: recentQuestions.length,
-      allowIncongruence
-    }
-  }
-}
-
-export const generateAdaptiveQuestion = async (
-  session: SessionState,
-  options: InferenceRequestOptions = {}
-): Promise<Question> => {
-  const generated = await generateAdaptiveQuestionDetailed(session, options)
-  return generated.question
-}
-
-export const requestDistributionUpdate = async (
-  session: SessionState,
-  question: Question,
-  answer: YesNo,
-  options: InferenceRequestOptions = {}
-): Promise<UpdateModelOutput | null> => {
-  const dist = session.distribution
-  const recentAnswerCount = Math.min(options.promptBudget?.recentAnswers ?? 3, 4)
-  const recentAnswers = summarizeRecentAnswers(session, recentAnswerCount)
-
-  const system = [
-    'You are calibrating MBTI16 and Enneagram9 posterior distributions.',
-    'Return valid JSON only.',
-    'Respect current posterior and answer signal; adjust smoothly, not abruptly.'
-  ].join(' ')
-
-  const user = [
-    `Question text: ${question.text_ko}`,
-    `Targets: ${JSON.stringify(question.targets)}`,
-    `Scoring reference: ${JSON.stringify(question.scoring || {})}`,
-    `Answer: ${answer}`,
-    `Recent answers summary: ${JSON.stringify(recentAnswers)}`,
-    `Current distribution summary: ${JSON.stringify(distributionSummary(dist))}`,
-    'Return JSON with mbtiProbs16(16 types), enneagramProbs9(types 1-9), conflicts(list).',
-    'Probabilities must each sum to 1.0 approximately.'
-  ].join('\n')
-
-  const raw = await requestO3Json<UpdateModelOutput>({
-    label: 'distribution_update',
-    system,
-    user,
-    schema: updateSchema,
-    requestId: options.requestId,
-    fallback: () => defaultModelUpdate(dist),
-    promptMeta: {
-      historyLength: session.answers.length,
-      recentAnswerCount: recentAnswers.length,
-      promptChars: system.length + user.length
-    }
-  })
-
-  return {
-    mbtiProbs16: normalizeProbMap(raw.mbtiProbs16, MBTI_TYPES),
-    enneagramProbs9: normalizeProbMap(raw.enneagramProbs9, ENNEAGRAM_TYPES),
-    conflicts: Array.isArray(raw.conflicts) ? raw.conflicts.slice(0, 6) : []
-  }
-}
-
 const fallbackReport = (session: SessionState): FinalReport => {
   const mbtiCandidates = getTopCandidates(session.distribution.mbtiProbs16, 3).map(item => ({
     type: item.type,
@@ -459,10 +120,10 @@ const fallbackReport = (session: SessionState): FinalReport => {
     },
     nickname_ko: `${quadra} 탐색가`,
     narrative_ko:
-      '당신은 상황을 해석할 때 큰 구조를 먼저 보고, 실행에서는 현실적인 제약을 함께 점검하는 편입니다. 관계에서는 거리를 조절하며 신뢰를 쌓고, 판단 순간에는 감정의 맥락과 논리적 정합성을 동시에 고려합니다. 무리하게 자신을 바꾸기보다, 자신이 잘 작동하는 리듬을 설계할 때 성과가 안정적으로 커집니다.',
+      '당신은 상황을 해석할 때 큰 구조와 현실 조건을 함께 본 뒤, 실행에서 리듬을 조절해 안정적으로 완성해 가는 편입니다. 관계에서는 표현과 판단을 분리해 신중히 움직이며, 선택 순간에는 즉흥보다 일관성을 유지하려는 경향이 강합니다. 압박이 큰 환경에서도 기준이 선명해질수록 강점이 더 잘 드러납니다.',
     misperception_ko:
-      '겉으로는 차갑거나 느리게 보일 수 있으나 실제로는 섣부른 결정보다 오래 가는 선택을 만들기 위해 속도를 조절하는 타입입니다.',
-    short_caption_ko: `mindtrace 결과: ${topMbti} · ${wing}. 겉보기보다 깊게 설계하고, 천천히 확실하게 움직이는 편.`,
+      '겉으로는 느리거나 조심스럽게 보일 수 있으나 실제로는 오래 가는 선택을 만들기 위해 검증 단계를 의도적으로 거치는 타입입니다.',
+    short_caption_ko: `mindtrace 결과: ${topMbti} · ${wing}. 보여지는 반응보다 내부 기준이 더 단단한 편.`,
     style_tags: {
       quadra,
       tone: 'C'
@@ -477,7 +138,7 @@ export const finalizeWithModel = async (
   const fallback = fallbackReport(session)
 
   const promptData = {
-    answers: session.answers.slice(-12),
+    answers: session.answers.slice(-14),
     summary: summarizeDistribution(session.distribution),
     topMbti: getTopCandidates(session.distribution.mbtiProbs16, 3),
     topEnneagram: getTopCandidates(session.distribution.enneagramProbs9, 3)

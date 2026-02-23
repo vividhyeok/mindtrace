@@ -13,11 +13,12 @@ Invite-code gated MBTI + Enneagram web app built with Nuxt 3.
 - Invite code gate using `APP_PASSCODE`
 - Short-lived auth token issued by `/api/auth` and required on every API call
 - Server-only OpenAI access via `OPENAI_API_KEY`
-- Adaptive yes/no questioning
-  - First 6 questions are curated baseline
-  - Then adaptive questions from uncertainty/conflicts
-  - Generated question quality filter + regeneration + curated fallback
-- Deterministic probability engine + o3 calibration
+- Adaptive yes/no questioning (Akinator-style selection engine)
+  - Questions are served from prebuilt question bank (no runtime question generation)
+  - Each answer updates MBTI/Enneagram deterministically
+  - Next question is selected by split score (uncertainty/candidate separation/duplication penalty)
+  - 3-phase flow: Phase A axis scan -> Phase B tie-break -> Phase C validation
+- Deterministic probability engine (runtime LLM 호출 최소화)
 - Early-stop thresholds with max-question cap
 - In-memory abuse protection
   - `/api/auth` IP rate limit + temporary cooldown after repeated failures
@@ -50,10 +51,11 @@ Server API routes:
 
 See `.env.example`.
 
-- `OPENAI_API_KEY` required for real o3 inference
+- `OPENAI_API_KEY` optional (used for finalize narrative only)
 - `APP_PASSCODE` required for invite-code gate
 - `LOG_LEVEL=basic|full`
-- `MAX_QUESTIONS` optional (default `28`)
+- `MAX_QUESTIONS` optional (default `20`)
+- `MIN_QUESTIONS` optional (default `8`)
 - `SESSION_TTL_MINUTES` optional (default `180`)
 
 ## Setup
@@ -98,19 +100,24 @@ npm run preview
   - Server restart or serverless cold replacement can clear active sessions.
   - Rate-limit state is also reset on restart.
 
-## Question Quality Filter
+## Question Engine
 
-For model-generated adaptive questions, the server applies validation before serving:
+Question runtime is selection-centric, not generation-centric.
 
-- Length must be `18~70` chars.
-- Must look like a yes/no behavior statement.
-- Forbidden expressions are blocked:
-  - `보통`, `가끔`, `대체로`, `상황에 따라`, `사람마다`, `케바케`, `종종`, `때때로`
-- Abstract/definition-like wording is filtered.
-- Similarity against recent questions is checked to reduce duplicates.
-- On validation failure:
-  - regenerate up to 2 times
-  - then fall back to curated question pool
+- Question bank items include metadata:
+  - `context`, `mode`, `pattern`, `cooldownGroup`, `ambiguityScore`, `qualityScore`
+  - yes/no transition deltas for MBTI axis + Enneagram scores
+- Selector scores candidates each turn and picks the highest:
+  - axis uncertainty gain
+  - MBTI top-candidate split
+  - Enneagram split
+  - novelty/cooldown penalties
+  - ambiguity penalty / quality bonus
+- `LOG_LEVEL=full` exposes:
+  - `question.source=bank`
+  - `question.select.score`
+  - `question.select.reason`
+  - phase / early-stop checks
 
 ## Rate Limit / Cooldown (MVP)
 
@@ -132,8 +139,9 @@ MVP note: these limits are memory-backed and not distributed across instances.
 - API observability logs include:
   - `requestId` per request
   - endpoint latency (`latencyMs`)
-  - OpenAI success/failure, JSON repair usage, fallback usage
-  - question filter fail reasons / regeneration / fallback (full)
+  - deterministic update/selection timing
+  - OpenAI success/failure, JSON repair usage, fallback usage (finalize only)
+  - question selection score/reason (full)
 
 In production, verbose logs are suppressed to minimal output.
 

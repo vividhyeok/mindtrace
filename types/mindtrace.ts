@@ -26,6 +26,11 @@ export type EnneagramType = (typeof ENNEAGRAM_TYPES)[number]
 export type MbtiAxis = (typeof MBTI_AXES)[number]
 export type YesNo = 'yes' | 'no'
 
+export type QuestionPhase = 'A' | 'B' | 'C'
+export type QuestionContext = 'work' | 'private' | 'daily'
+export type QuestionMode = 'axis_scan' | 'tie_break' | 'validation'
+export type QuestionPattern = 'behavior' | 'internal' | 'judgment' | 'incongruence'
+
 export const AUTH_REASON_CODES = [
   'AUTH_TOKEN_MISSING',
   'AUTH_TOKEN_INVALID',
@@ -53,12 +58,36 @@ export interface QuestionScoring {
   enneagram?: Partial<Record<EnneagramType, number>>
 }
 
+export interface QuestionDelta {
+  mbti?: Partial<Record<MbtiAxis, number>>
+  enneagram?: Partial<Record<EnneagramType, number>>
+}
+
+export interface QuestionTransitions {
+  yes: QuestionDelta
+  no: QuestionDelta
+}
+
+export interface QuestionMetadata {
+  context: QuestionContext
+  mode: QuestionMode
+  pattern: QuestionPattern
+  cooldownGroup: string
+  ambiguityScore: number
+  qualityScore: number
+  expressionSignal?: number
+  judgmentSignal?: number
+  phaseHints?: QuestionPhase[]
+}
+
 export interface Question {
   id: string
   text_ko: string
   targets: QuestionTargets
   rationale_short: string
   scoring?: QuestionScoring
+  transitions?: QuestionTransitions
+  meta?: QuestionMetadata
 }
 
 export interface PublicQuestion {
@@ -113,6 +142,8 @@ export interface StopCheckDecision {
     | 'conflict_high'
     | 'max_cap'
     | 'threshold_met'
+    | 'phase_not_ready'
+    | 'validation_incomplete'
   snapshot: StopSnapshot
   metrics: {
     answerCount: number
@@ -124,42 +155,33 @@ export interface StopCheckDecision {
     enneaGap: number
     conflictCount: number
     stabilityScore: number
+    phase?: QuestionPhase
+    validationCount?: number
+    requiredValidationCount?: number
   }
 }
 
-export interface PrefetchBranch {
-  answer: YesNo
-  done: boolean
-  reason: 'early_stop' | 'cap' | 'continue'
-  detail: string
-  nextQuestion?: Question
-  distribution: DistributionState
-  summary: {
-    mbtiTop3: TypeCandidate<MbtiType>[]
-    enneagramTop2: TypeCandidate<string>[]
-    conflicts: string[]
-  }
-  snapshot: StopSnapshot
-  latencyMs: number
-  modelCalibration: {
-    attempted: boolean
-    applied: boolean
-  }
-  questionGeneration?: {
-    usedModel: boolean
-    retryCount: number
-    usedFallback: boolean
-  }
+export interface QuestionSelectionBreakdown {
+  axisUncertainty: number
+  mbtiSplit: number
+  enneaSplit: number
+  noveltyPenalty: number
+  ambiguityPenalty: number
+  qualityBoost: number
+  phaseBonus: number
 }
 
-export interface PrefetchEntry {
-  questionId: string
-  baseAnswerCount: number
-  createdAt: number
-  inFlight: boolean
-  completedAt?: number
-  branches: Partial<Record<YesNo, PrefetchBranch>>
-  errors: Partial<Record<YesNo, string>>
+export interface QuestionSelectionCandidate {
+  id: string
+  score: number
+  breakdown: QuestionSelectionBreakdown
+}
+
+export interface QuestionSelectionResult {
+  question: Question
+  phase: QuestionPhase
+  reason: string
+  ranked: QuestionSelectionCandidate[]
 }
 
 export interface FinalReport {
@@ -190,11 +212,11 @@ export interface SessionState {
   lastUpdatedAt: number
   done: boolean
   finalized: boolean
+  phase: QuestionPhase
   questionHistory: Question[]
   answers: AnswerRecord[]
   distribution: DistributionState
   stopSnapshots: StopSnapshot[]
-  prefetchByQuestionId: Record<string, PrefetchEntry>
   report?: FinalReport
 }
 
