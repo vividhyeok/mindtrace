@@ -6,6 +6,7 @@ export default defineNuxtRouteMiddleware((to) => {
 
   if (!token || session.isTokenExpired()) {
     session.clearToken()
+    session.clearSession()
     if (to.path !== '/') {
       return navigateTo('/')
     }
