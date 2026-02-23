@@ -2,8 +2,47 @@
 const passcode = ref('')
 const pending = ref(false)
 const errorMessage = ref('')
+const isModalOpen = ref(false)
 
 const session = useClientSession()
+
+const focusPasscodeInput = () => {
+  if (!process.client) return
+  nextTick(() => {
+    const input = document.getElementById('invite-passcode')
+    input?.focus()
+  })
+}
+
+const openModal = () => {
+  errorMessage.value = ''
+  isModalOpen.value = true
+  focusPasscodeInput()
+}
+
+const closeModal = () => {
+  if (pending.value) return
+  errorMessage.value = ''
+  isModalOpen.value = false
+}
+
+const onBackdropClick = (event: MouseEvent) => {
+  if (event.target === event.currentTarget) {
+    closeModal()
+  }
+}
+
+const onInputKeyup = (event: KeyboardEvent) => {
+  if (event.key === 'Enter') {
+    submit()
+  }
+}
+
+const onWindowKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && isModalOpen.value) {
+    closeModal()
+  }
+}
 
 const submit = async () => {
   errorMessage.value = ''
@@ -22,6 +61,7 @@ const submit = async () => {
 
     session.setToken(result.token, result.expiresAt)
     session.clearSession()
+    isModalOpen.value = false
     await navigateTo('/test')
   }
   catch (error: any) {
@@ -36,45 +76,73 @@ onMounted(() => {
   if (session.getToken() && !session.isTokenExpired()) {
     navigateTo('/test')
   }
+
+  window.addEventListener('keydown', onWindowKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onWindowKeydown)
 })
 </script>
 
 <template>
-  <main class="mx-auto max-w-2xl">
-    <section class="soft-card fade-in p-6 sm:p-8">
-      <p class="mb-2 text-sm font-bold text-ink/70">Invite Code Gate</p>
-      <h1 class="font-title text-4xl font-extrabold leading-tight">친구 전용 성향 실험실</h1>
-      <p class="mt-3 text-sm leading-6 text-ink/80 sm:text-base">
-        mindtrace는 MBTI와 Enneagram 경향을 함께 보는 가벼운 성향 테스트예요.
-        의료/진단 목적이 아닌 자기이해용입니다.
-      </p>
-
-      <div class="mt-6 rounded-3xl bg-lilac/60 p-4">
-        <label for="passcode" class="mb-2 block text-sm font-bold">초대 코드</label>
-        <input
-          id="passcode"
-          v-model="passcode"
-          type="password"
-          class="soft-input"
-          placeholder="코드를 입력해 주세요"
-          autocomplete="off"
-          @keyup.enter="submit"
-        >
-        <p v-if="errorMessage" class="mt-2 text-sm font-bold text-[#d93f66]">{{ errorMessage }}</p>
-        <button
-          class="soft-button-primary mt-4 w-full"
-          :disabled="pending"
-          @click="submit"
-        >
-          {{ pending ? '확인 중...' : '테스트 시작하기' }}
-        </button>
-      </div>
-
-      <div class="mt-5 flex flex-wrap gap-2 text-xs font-bold text-ink/70">
-        <span class="sticker bg-peach/70">Yes/No only</span>
-        <span class="sticker bg-mint/70">Adaptive 28문항 이내</span>
-        <span class="sticker bg-sky/70">OpenAI o3 + 안정화 로직</span>
+  <main class="mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl items-center justify-center px-1">
+    <section class="soft-card fade-in w-full max-w-xl p-6 text-center sm:p-8">
+      <h1 class="font-title text-[2rem] font-extrabold leading-[1.2] sm:text-[2.25rem]">
+        성향 유형 검사
+      </h1>
+      <p class="mt-4 text-sm text-ink/70 sm:text-base">보통 2~3분 정도 걸려요</p>
+      <p class="mt-2 text-sm text-ink/70 sm:text-base">너무 고민하지 말고 더 끌리는 쪽을 골라주세요</p>
+      <div class="mt-6">
+        <BaseButton class="w-full sm:w-auto sm:min-w-[168px]" @click="openModal">
+          시작하기
+        </BaseButton>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="isModalOpen"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4 py-6"
+        @click="onBackdropClick"
+      >
+        <section class="soft-card w-full max-w-md p-5 sm:p-6" @click.stop>
+          <div class="mb-4 flex items-start justify-between gap-3">
+            <h2 class="font-title text-2xl font-extrabold leading-tight">초대 코드 입력</h2>
+            <button
+              type="button"
+              class="soft-button soft-button-ghost h-10 w-10 p-0 text-xl leading-none"
+              :disabled="pending"
+              aria-label="닫기"
+              @click="closeModal"
+            >
+              ×
+            </button>
+          </div>
+
+          <label for="invite-passcode" class="mb-2 block text-sm font-bold text-ink/80">초대 코드</label>
+          <BaseInput
+            id="invite-passcode"
+            v-model="passcode"
+            type="password"
+            placeholder="코드를 입력해 주세요"
+            autocomplete="off"
+            :disabled="pending"
+            @keyup="onInputKeyup"
+          />
+
+          <p v-if="errorMessage" class="mt-2 text-sm font-bold text-[#d93f66]">{{ errorMessage }}</p>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <BaseButton variant="secondary" :disabled="pending" @click="closeModal">
+              취소
+            </BaseButton>
+            <BaseButton :disabled="pending" @click="submit">
+              {{ pending ? '확인 중...' : '확인' }}
+            </BaseButton>
+          </div>
+        </section>
+      </div>
+    </Teleport>
   </main>
 </template>
