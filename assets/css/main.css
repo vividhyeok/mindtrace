@@ -1,0 +1,136 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #504a60;
+  font-family: 'Nunito', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+  background-image:
+    radial-gradient(circle at 8% 10%, rgba(255, 217, 204, 0.45), transparent 38%),
+    radial-gradient(circle at 90% 14%, rgba(200, 242, 226, 0.6), transparent 32%),
+    radial-gradient(circle at 84% 82%, rgba(219, 234, 254, 0.58), transparent 36%),
+    linear-gradient(180deg, #fff9f2 0%, #fffefb 45%, #fef8ff 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.bg-soft-grid {
+  background-image: radial-gradient(circle at 2px 2px, rgba(80, 74, 96, 0.07) 1px, transparent 0);
+}
+
+.soft-card {
+  border-radius: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 16px 40px rgba(80, 74, 96, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #504a60;
+  box-shadow: 0 8px 0 rgba(80, 74, 96, 0.08);
+}
+
+.page-wrap {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 80rem;
+  padding: 1.5rem 1rem 3rem;
+}
+
+@media (min-width: 640px) {
+  .page-wrap {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .page-wrap {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+.soft-input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.75rem 1rem;
+  color: #504a60;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.soft-input:focus {
+  border-color: #ffd9cc;
+  box-shadow: 0 0 0 3px rgba(255, 217, 204, 0.45);
+}
+
+.soft-button {
+  border: 0;
+  cursor: pointer;
+  border-radius: 1rem;
+  padding: 0.75rem 1.25rem;
+  font-weight: 700;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.soft-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.soft-button-primary {
+  background: #ffd9cc;
+  color: #504a60;
+}
+
+.soft-button-primary:hover {
+  background: #ffccb9;
+}
+
+.soft-button-secondary {
+  background: #c8f2e2;
+  color: #504a60;
+}
+
+.soft-button-secondary:hover {
+  background: #b9ecd7;
+}
+
+.soft-button-ghost {
+  background: #ffffff;
+  color: #504a60;
+}
+
+.soft-button-ghost:hover {
+  background: #efe7ff;
+}
+
+@keyframes floatIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fade-in {
+  animation: floatIn 420ms ease-out forwards;
+}
