@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { H3Event } from 'h3'
+import { getErrorReasonCode } from '~/server/utils/error-codes'
 import { logBasic, logFull } from '~/server/utils/logger'
 
 export interface ApiRequestContext {
@@ -70,6 +71,7 @@ export const failApiRequest = (
   payload: Record<string, unknown> = {}
 ) => {
   const errorInfo = getErrorInfo(error)
+  const reasonCode = getErrorReasonCode(error) || undefined
   const latencyMs = Date.now() - ctx.startedAt
 
   logBasic('api.error', {
@@ -78,6 +80,7 @@ export const failApiRequest = (
     latencyMs,
     statusCode: errorInfo.statusCode,
     statusMessage: errorInfo.statusMessage,
+    reasonCode,
     ...payload
   })
 

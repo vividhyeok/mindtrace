@@ -131,3 +131,8 @@ mindtrace/
   - 변경 요약: 세션 만료(401) 시 클라이언트가 멈추지 않도록 자동 복구 흐름 추가. API 요청에서 401 감지 시 토큰/세션을 즉시 정리하고 `/`로 리다이렉트하도록 처리했으며, 라우트 가드에서도 만료 시 세션 정리를 함께 수행하도록 보강.
   - 영향 범위(파일/기능): `composables/useApiClient.ts`(401 공통 처리/리다이렉트), `middleware/require-auth.ts`(만료 시 `clearSession` 포함)
   - 다음 액션: 서버 메모리 토큰 초기화(재시작/배포) 상황에서도 사용자 이탈이 최소화되도록 게이트 화면에 재입장 안내 문구를 짧게 추가 검토
+- 2026-02-23 19:10:24 KST
+  - 변경 요약: 401 원인 코드를 `AUTH_TOKEN_*` / `SESSION_*`로 세분화하고, 서버에 `auth.check.start/fail`, `session.lookup.fail`, `answer.auth.fail`, `session.resume.fail` 로그를 추가. `/test`에서는 401 시 즉시 홈 리다이렉트 대신 화면 내 안내 + `처음부터 다시 시작/초대코드 다시 입력` 선택 UX로 전환.
+  - 영향 범위(파일/기능): `server/utils/auth.ts`, `server/utils/store.ts`, `server/utils/error-codes.ts`, `server/utils/observability.ts`, `server/api/session/[id].get.ts`, `server/api/start.post.ts`, `server/api/answer.post.ts`, `server/api/finalize.post.ts`, `server/api/result/[id].get.ts`, `composables/useApiClient.ts`, `pages/test.vue`, `pages/index.vue`, `types/mindtrace.ts`
+  - in-memory 세션 특성: dev/hot reload 또는 서버 재시작 시 `authTokenStore/sessionStore`가 초기화되어 기존 토큰/세션이 유효하지 않을 수 있음. 이 경우 새 세션 시작 또는 초대코드 재입력이 필요.
+  - 다음 액션: Vercel 배포 환경에서 401 reason code 비율(`AUTH_TOKEN_INVALID` vs `SESSION_NOT_FOUND`)을 관찰해 세션 영속화(KV/Redis) 우선순위 확정

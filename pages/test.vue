@@ -17,6 +17,12 @@ interface SessionSnapshot {
   }
 }
 
+interface AuthIssueState {
+  code: string
+  title: string
+  message: string
+}
+
 const route = useRoute()
 const api = useApiClient()
 const clientSession = useClientSession()
@@ -30,17 +36,73 @@ const currentQuestion = ref<PublicQuestion | null>(null)
 const progress = ref({ current: 0, max: 28, ratio: 0 })
 const resumeSnapshot = ref<SessionSnapshot | null>(null)
 const selectedAnswer = ref<'yes' | 'no' | null>(null)
+const authIssue = ref<AuthIssueState | null>(null)
 
 const progressVisual = computed(() => {
   return Math.min(94, 14 + progress.value.current * 6)
 })
 
+const getErrorReasonCode = (error: any): string => {
+  return String(error?.data?.code || error?.data?.data?.code || '')
+}
+
+const resolveAuthIssue = (error: any): AuthIssueState | null => {
+  const statusCode = Number(error?.statusCode || error?.data?.statusCode || 0)
+  if (statusCode !== 401) return null
+
+  const code = getErrorReasonCode(error)
+  const devHint = import.meta.dev
+    ? '개발 환경에서는 서버 재시작 시 in-memory 세션/토큰이 초기화될 수 있어요.'
+    : ''
+
+  if (code === 'SESSION_NOT_FOUND' || code === 'SESSION_EXPIRED') {
+    return {
+      code,
+      title: '세션이 만료되었어요',
+      message: `진행 중이던 테스트를 찾지 못했어요. ${devHint}`.trim()
+    }
+  }
+
+  if (code === 'AUTH_TOKEN_MISSING' || code === 'AUTH_TOKEN_INVALID' || code === 'AUTH_TOKEN_EXPIRED') {
+    return {
+      code,
+      title: '초대코드 재입력이 필요해요',
+      message: `인증 토큰이 유효하지 않아요. 초대코드를 다시 입력해 주세요. ${devHint}`.trim()
+    }
+  }
+
+  if (code === 'SESSION_TOKEN_MISMATCH') {
+    return {
+      code,
+      title: '세션 정보가 맞지 않아요',
+      message: '새 세션으로 다시 시작해 주세요.'
+    }
+  }
+
+  return {
+    code: code || 'UNKNOWN',
+    title: '세션 확인이 필요해요',
+    message: error?.data?.statusMessage || '인증 상태를 확인하지 못했어요. 다시 시작해 주세요.'
+  }
+}
+
+const applyAuthIssue = (error: any) => {
+  const issue = resolveAuthIssue(error)
+  if (!issue) return false
+  authIssue.value = issue
+  errorMessage.value = issue.message
+  answering.value = false
+  finalizing.value = false
+  return true
+}
+
 const fetchSnapshot = async (id: string) => {
-  return await api.get<SessionSnapshot>(`/api/session/${id}`)
+  return await api.get<SessionSnapshot>(`/api/session/${id}`, {}, { authBehavior: 'stay' })
 }
 
 const startSession = async () => {
-  const data = await api.post<StartResponse>('/api/start', {})
+  const data = await api.post<StartResponse>('/api/start', {}, { authBehavior: 'stay' })
+  authIssue.value = null
   sessionId.value = data.sessionId
   clientSession.setSessionId(data.sessionId)
   currentQuestion.value = data.firstQuestion
@@ -54,7 +116,7 @@ const finalizeNow = async () => {
   try {
     const report = await api.post<FinalReport>('/api/finalize', {
       sessionId: sessionId.value
-    })
+    }, { authBehavior: 'stay' })
 
     clientSession.saveReport(sessionId.value, report)
 
@@ -62,6 +124,10 @@ const finalizeNow = async () => {
       path: '/result',
       query: { sessionId: sessionId.value }
     })
+  }
+  catch (error: any) {
+    if (applyAuthIssue(error)) return
+    throw error
   }
   finally {
     finalizing.value = false
@@ -87,6 +153,7 @@ const applySnapshot = async (snapshot: SessionSnapshot) => {
 const initialize = async () => {
   loading.value = true
   errorMessage.value = ''
+  authIssue.value = null
 
   try {
     const fromQuery = typeof route.query.sessionId === 'string' ? route.query.sessionId : ''
@@ -118,7 +185,10 @@ const initialize = async () => {
         resumeSnapshot.value = snapshot
         return
       }
-      catch {
+      catch (error: any) {
+        if (applyAuthIssue(error)) {
+          return
+        }
         clientSession.clearSession()
       }
     }
@@ -126,6 +196,9 @@ const initialize = async () => {
     await startSession()
   }
   catch (error: any) {
+    if (applyAuthIssue(error)) {
+      return
+    }
     errorMessage.value = error?.data?.statusMessage || '세션을 시작하지 못했습니다.'
   }
   finally {
@@ -137,20 +210,53 @@ const continueExisting = async () => {
   if (!resumeSnapshot.value) return
   const snapshot = resumeSnapshot.value
   resumeSnapshot.value = null
+  authIssue.value = null
   await applySnapshot(snapshot)
 }
 
 const startFresh = async () => {
+  authIssue.value = null
   resumeSnapshot.value = null
   currentQuestion.value = null
   clientSession.clearSession()
-  await startSession()
+  try {
+    await startSession()
+  }
+  catch (error: any) {
+    if (applyAuthIssue(error)) return
+    errorMessage.value = error?.data?.statusMessage || '세션을 시작하지 못했습니다.'
+  }
+}
+
+const restartAfterIssue = async () => {
+  authIssue.value = null
+  errorMessage.value = ''
+  resumeSnapshot.value = null
+  currentQuestion.value = null
+  selectedAnswer.value = null
+  finalizing.value = false
+  answering.value = false
+  clientSession.clearSession()
+  try {
+    await startSession()
+  }
+  catch (error: any) {
+    if (applyAuthIssue(error)) return
+    errorMessage.value = error?.data?.statusMessage || '세션을 시작하지 못했습니다.'
+  }
+}
+
+const reenterInviteCode = async () => {
+  clientSession.clearToken()
+  clientSession.clearSession()
+  await navigateTo('/?reauth=1')
 }
 
 const submitAnswer = async (answer: 'yes' | 'no') => {
   if (!currentQuestion.value || answering.value || finalizing.value) return
 
   answering.value = true
+  authIssue.value = null
   selectedAnswer.value = answer
   errorMessage.value = ''
 
@@ -159,7 +265,7 @@ const submitAnswer = async (answer: 'yes' | 'no') => {
       sessionId: sessionId.value,
       questionId: currentQuestion.value.id,
       answer
-    })
+    }, { authBehavior: 'stay' })
 
     progress.value = result.progress
 
@@ -172,6 +278,9 @@ const submitAnswer = async (answer: 'yes' | 'no') => {
     currentQuestion.value = result.nextQuestion || null
   }
   catch (error: any) {
+    if (applyAuthIssue(error)) {
+      return
+    }
     errorMessage.value = error?.data?.statusMessage || '응답 처리 중 오류가 발생했습니다.'
   }
   finally {
@@ -196,7 +305,18 @@ onMounted(async () => {
       </div>
 
       <div v-else>
-        <div v-if="resumeSnapshot" class="rounded-4xl border border-white/80 bg-white/90 p-6 shadow-soft">
+        <div v-if="authIssue" class="rounded-4xl border border-white/80 bg-white/92 p-6 shadow-soft">
+          <p class="text-sm font-bold text-ink/70">세션 안내</p>
+          <p class="mt-2 text-xl font-extrabold">{{ authIssue.title }}</p>
+          <p class="mt-3 text-sm leading-6 text-ink/80">{{ authIssue.message }}</p>
+
+          <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BaseButton variant="secondary" @click="restartAfterIssue">처음부터 다시 시작</BaseButton>
+            <BaseButton @click="reenterInviteCode">초대코드 다시 입력</BaseButton>
+          </div>
+        </div>
+
+        <div v-else-if="resumeSnapshot" class="rounded-4xl border border-white/80 bg-white/90 p-6 shadow-soft">
           <p class="text-sm font-bold text-ink/70">이어서 진행할 테스트가 있어요</p>
           <p class="mt-2 text-lg font-extrabold">질문 {{ resumeSnapshot.progress.current + 1 }}부터 이어서 진행</p>
           <p class="mt-2 text-sm text-ink/70">이어하기를 누르면 마지막 질문 상태로 복구돼요.</p>

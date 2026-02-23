@@ -12,7 +12,10 @@ export default defineEventHandler(async (event) => {
 
   try {
     const body = await readBody<{ token?: string, sessionId?: string }>(event)
-    const token = requireValidToken(event, body.token)
+    const token = requireValidToken(event, body.token, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
 
     if (!body.sessionId) {
       throw createError({ statusCode: 400, statusMessage: 'sessionId가 필요합니다.' })
@@ -20,8 +23,14 @@ export default defineEventHandler(async (event) => {
 
     assertSessionBurstAllowed('finalize', body.sessionId, request.requestId)
 
-    const session = getSessionOrThrow(body.sessionId)
-    assertSessionOwnership(session, token)
+    const session = getSessionOrThrow(body.sessionId, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
+    assertSessionOwnership(session, token, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
 
     if (session.report) {
       endApiRequest(request, {

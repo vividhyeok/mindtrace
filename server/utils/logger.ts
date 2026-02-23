@@ -9,6 +9,18 @@ const safeJson = (value: unknown) => {
   }
 }
 
+const mask = (value: string, visibleLeft = 4, visibleRight = 3) => {
+  if (!value) return ''
+  if (value.length <= visibleLeft + visibleRight) {
+    return `${value.slice(0, 1)}***`
+  }
+  return `${value.slice(0, visibleLeft)}***${value.slice(-visibleRight)}`
+}
+
+export const maskToken = (token?: string) => mask(String(token || ''), 4, 3)
+
+export const maskSessionId = (sessionId?: string) => mask(String(sessionId || ''), 8, 4)
+
 export const logBasic = (label: string, payload?: unknown) => {
   const { logLevel } = getAppConfig()
   if (process.env.NODE_ENV === 'production' && logLevel !== 'basic') {

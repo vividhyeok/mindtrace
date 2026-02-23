@@ -4,6 +4,7 @@ const pending = ref(false)
 const errorMessage = ref('')
 const isModalOpen = ref(false)
 
+const route = useRoute()
 const session = useClientSession()
 
 const focusPasscodeInput = () => {
@@ -75,6 +76,11 @@ const submit = async () => {
 onMounted(() => {
   if (session.getToken() && !session.isTokenExpired()) {
     navigateTo('/test')
+  }
+
+  if (typeof route.query.reauth === 'string') {
+    openModal()
+    errorMessage.value = '다시 입장하려면 초대 코드를 입력해 주세요.'
   }
 
   window.addEventListener('keydown', onWindowKeydown)

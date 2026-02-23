@@ -6,15 +6,24 @@ export default defineEventHandler((event) => {
   const request = beginApiRequest(event, 'GET /api/result/:id')
 
   try {
-    const token = requireValidToken(event)
+    const token = requireValidToken(event, undefined, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
     const sessionId = getRouterParam(event, 'id')
 
     if (!sessionId) {
       throw createError({ statusCode: 400, statusMessage: 'sessionId가 필요합니다.' })
     }
 
-    const session = getSessionOrThrow(sessionId)
-    assertSessionOwnership(session, token)
+    const session = getSessionOrThrow(sessionId, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
+    assertSessionOwnership(session, token, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
 
     const report = getReport(sessionId) || session.report
 

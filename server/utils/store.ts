@@ -1,4 +1,11 @@
 import type { FinalReport, SessionState } from '~/types/mindtrace'
+import { createReasonError } from '~/server/utils/error-codes'
+import { logFull, maskSessionId, maskToken } from '~/server/utils/logger'
+
+interface SessionLogContext {
+  requestId?: string
+  endpoint?: string
+}
 
 const sessionStore = new Map<string, SessionState>()
 const reportStore = new Map<string, FinalReport>()
@@ -18,18 +25,45 @@ export const saveSession = (session: SessionState) => {
   sessionStore.set(session.id, session)
 }
 
-export const getSessionOrThrow = (sessionId: string): SessionState => {
-  cleanExpiredSessions()
+export const getSessionOrThrow = (
+  sessionId: string,
+  context: SessionLogContext = {}
+): SessionState => {
   const session = sessionStore.get(sessionId)
   if (!session) {
-    throw createError({ statusCode: 404, statusMessage: '세션을 찾을 수 없습니다.' })
+    logFull('session.lookup.fail', {
+      requestId: context.requestId || 'n/a',
+      endpoint: context.endpoint || 'unknown',
+      reasonCode: 'SESSION_NOT_FOUND',
+      sessionId: maskSessionId(sessionId)
+    })
+    throw createReasonError('SESSION_NOT_FOUND')
   }
+
+  if (session.expiresAt <= Date.now()) {
+    sessionStore.delete(sessionId)
+    reportStore.delete(sessionId)
+    logFull('session.lookup.fail', {
+      requestId: context.requestId || 'n/a',
+      endpoint: context.endpoint || 'unknown',
+      reasonCode: 'SESSION_EXPIRED',
+      sessionId: maskSessionId(sessionId)
+    })
+    throw createReasonError('SESSION_EXPIRED')
+  }
+
   return session
 }
 
 export const getSessionById = (sessionId: string): SessionState | null => {
-  cleanExpiredSessions()
-  return sessionStore.get(sessionId) || null
+  const session = sessionStore.get(sessionId)
+  if (!session) return null
+  if (session.expiresAt <= Date.now()) {
+    sessionStore.delete(sessionId)
+    reportStore.delete(sessionId)
+    return null
+  }
+  return session
 }
 
 export const saveReport = (sessionId: string, report: FinalReport) => {
@@ -41,8 +75,19 @@ export const getReport = (sessionId: string): FinalReport | null => {
   return reportStore.get(sessionId) || null
 }
 
-export const assertSessionOwnership = (session: SessionState, token: string) => {
+export const assertSessionOwnership = (
+  session: SessionState,
+  token: string,
+  context: SessionLogContext = {}
+) => {
   if (session.token !== token) {
-    throw createError({ statusCode: 403, statusMessage: '세션 권한이 없습니다.' })
+    logFull('session.lookup.fail', {
+      requestId: context.requestId || 'n/a',
+      endpoint: context.endpoint || 'unknown',
+      reasonCode: 'SESSION_TOKEN_MISMATCH',
+      sessionId: maskSessionId(session.id),
+      token: maskToken(token)
+    })
+    throw createReasonError('SESSION_TOKEN_MISMATCH')
   }
 }

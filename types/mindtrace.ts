@@ -26,6 +26,23 @@ export type EnneagramType = (typeof ENNEAGRAM_TYPES)[number]
 export type MbtiAxis = (typeof MBTI_AXES)[number]
 export type YesNo = 'yes' | 'no'
 
+export const AUTH_REASON_CODES = [
+  'AUTH_TOKEN_MISSING',
+  'AUTH_TOKEN_INVALID',
+  'AUTH_TOKEN_EXPIRED'
+] as const
+
+export const SESSION_REASON_CODES = [
+  'SESSION_NOT_FOUND',
+  'SESSION_EXPIRED',
+  'SESSION_TOKEN_MISMATCH',
+  'SESSION_ALREADY_FINALIZED'
+] as const
+
+export type AuthReasonCode = (typeof AUTH_REASON_CODES)[number]
+export type SessionReasonCode = (typeof SESSION_REASON_CODES)[number]
+export type ApiReasonCode = AuthReasonCode | SessionReasonCode
+
 export interface QuestionTargets {
   mbtiAxes: MbtiAxis[]
   enneagram: EnneagramType[]

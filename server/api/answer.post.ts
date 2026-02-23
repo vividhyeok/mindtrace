@@ -11,7 +11,8 @@ import {
   requestDistributionUpdate,
   toPublicQuestion
 } from '~/server/utils/inference'
-import { logBasic, logFull } from '~/server/utils/logger'
+import { getErrorReasonCode } from '~/server/utils/error-codes'
+import { logBasic, logFull, maskSessionId, maskToken } from '~/server/utils/logger'
 import { beginApiRequest, endApiRequest, failApiRequest } from '~/server/utils/observability'
 import {
   applyAnswerToDistribution,
@@ -350,6 +351,7 @@ const schedulePrefetch = (sessionId: string, questionId: string, requestId: stri
 
 export default defineEventHandler(async (event) => {
   const request = beginApiRequest(event, 'POST /api/answer')
+  let body: AnswerBody = {}
   const stage: StageMetrics = {
     prefetchLookupMs: 0,
     deterministicUpdateMs: 0,
@@ -361,8 +363,11 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const body = await readBody<AnswerBody>(event)
-    const token = requireValidToken(event, body.token)
+    body = await readBody<AnswerBody>(event)
+    const token = requireValidToken(event, body.token, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
 
     if (!body.sessionId || !body.questionId || !isValidAnswer(body.answer)) {
       throw createError({ statusCode: 400, statusMessage: '요청 형식이 올바르지 않습니다.' })
@@ -370,14 +375,27 @@ export default defineEventHandler(async (event) => {
 
     assertSessionBurstAllowed('answer', body.sessionId, request.requestId)
 
-    const session = getSessionOrThrow(body.sessionId)
-    assertSessionOwnership(session, token)
+    const session = getSessionOrThrow(body.sessionId, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
+    assertSessionOwnership(session, token, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
     ensureSessionRuntimeFields(session)
     trimPrefetchCache(session)
 
     const { maxQuestions, minQuestions } = getAppConfig()
 
     if (session.finalized) {
+      logFull('session.lookup.fail', {
+        requestId: request.requestId,
+        endpoint: request.endpoint,
+        reasonCode: 'SESSION_ALREADY_FINALIZED',
+        sessionId: maskSessionId(session.id)
+      })
+
       const response = {
         done: true,
         progress: buildProgress(session.answers.length, maxQuestions)
@@ -697,6 +715,17 @@ export default defineEventHandler(async (event) => {
     return response
   }
   catch (error: any) {
+    const statusCode = Number(error?.statusCode || error?.data?.statusCode || 0)
+    if (statusCode === 401) {
+      logFull('answer.auth.fail', {
+        requestId: request.requestId,
+        endpoint: request.endpoint,
+        reasonCode: getErrorReasonCode(error) || 'UNKNOWN',
+        sessionId: maskSessionId(body.sessionId),
+        token: maskToken(body.token),
+        questionId: body.questionId || ''
+      })
+    }
     failApiRequest(request, error)
     throw error
   }

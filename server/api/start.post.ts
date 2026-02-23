@@ -13,7 +13,10 @@ export default defineEventHandler(async (event) => {
 
   try {
     const body = await readBody<{ token?: string }>(event)
-    const token = requireValidToken(event, body.token)
+    const token = requireValidToken(event, body.token, {
+      requestId: request.requestId,
+      endpoint: request.endpoint
+    })
 
     const firstQuestion = getCuratedQuestionByIndex(0)
     if (!firstQuestion) {

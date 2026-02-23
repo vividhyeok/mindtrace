@@ -1,10 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { H3Event } from 'h3'
 import { getAppConfig } from '~/server/utils/config'
+import { createReasonError } from '~/server/utils/error-codes'
+import { logFull, maskToken } from '~/server/utils/logger'
 
 interface AuthTokenRecord {
   token: string
   expiresAt: number
+}
+
+interface AuthCheckContext {
+  requestId?: string
+  endpoint?: string
 }
 
 const authTokenStore = new Map<string, AuthTokenRecord>()
@@ -49,36 +56,74 @@ export const issueAuthToken = (): { token: string, expiresAt: string } => {
   }
 }
 
-const resolveToken = (event: H3Event, tokenFromBody?: string): string => {
+const resolveToken = (
+  event: H3Event,
+  tokenFromBody?: string
+): { token: string, source: 'body' | 'query' | 'header' | 'none' } => {
   if (tokenFromBody && tokenFromBody.length > 0) {
-    return tokenFromBody
+    return { token: tokenFromBody, source: 'body' }
   }
 
   const queryToken = getQuery(event).token
   if (typeof queryToken === 'string' && queryToken.length > 0) {
-    return queryToken
+    return { token: queryToken, source: 'query' }
   }
 
   const authHeader = getHeader(event, 'authorization')
   if (authHeader?.startsWith('Bearer ')) {
-    return authHeader.slice(7).trim()
+    return { token: authHeader.slice(7).trim(), source: 'header' }
   }
 
-  return ''
+  return { token: '', source: 'none' }
 }
 
-export const requireValidToken = (event: H3Event, tokenFromBody?: string): string => {
+export const requireValidToken = (
+  event: H3Event,
+  tokenFromBody?: string,
+  context: AuthCheckContext = {}
+): string => {
   cleanupExpired()
 
-  const token = resolveToken(event, tokenFromBody)
+  const resolved = resolveToken(event, tokenFromBody)
+  const token = resolved.token
+
+  logFull('auth.check.start', {
+    requestId: context.requestId || 'n/a',
+    endpoint: context.endpoint || 'unknown',
+    tokenSource: resolved.source,
+    hasToken: token.length > 0
+  })
+
   if (!token) {
-    throw createError({ statusCode: 401, statusMessage: '인증 토큰이 없습니다.' })
+    logFull('auth.check.fail', {
+      requestId: context.requestId || 'n/a',
+      endpoint: context.endpoint || 'unknown',
+      reasonCode: 'AUTH_TOKEN_MISSING'
+    })
+    throw createReasonError('AUTH_TOKEN_MISSING')
   }
 
   const found = authTokenStore.get(token)
-  if (!found || found.expiresAt <= Date.now()) {
+  if (!found) {
+    logFull('auth.check.fail', {
+      requestId: context.requestId || 'n/a',
+      endpoint: context.endpoint || 'unknown',
+      reasonCode: 'AUTH_TOKEN_INVALID',
+      token: maskToken(token)
+    })
+    throw createReasonError('AUTH_TOKEN_INVALID')
+  }
+
+  if (found.expiresAt <= Date.now()) {
     authTokenStore.delete(token)
-    throw createError({ statusCode: 401, statusMessage: '세션이 만료되었습니다. 다시 입장해 주세요.' })
+    logFull('auth.check.fail', {
+      requestId: context.requestId || 'n/a',
+      endpoint: context.endpoint || 'unknown',
+      reasonCode: 'AUTH_TOKEN_EXPIRED',
+      token: maskToken(token),
+      expiresAt: found.expiresAt
+    })
+    throw createReasonError('AUTH_TOKEN_EXPIRED')
   }
 
   return token
