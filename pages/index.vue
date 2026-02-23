@@ -7,6 +7,11 @@ const isModalOpen = ref(false)
 const route = useRoute()
 const session = useClientSession()
 
+const setBodyScrollLock = (locked: boolean) => {
+  if (!process.client) return
+  document.body.style.overflow = locked ? 'hidden' : ''
+}
+
 const focusPasscodeInput = () => {
   if (!process.client) return
   nextTick(() => {
@@ -63,6 +68,7 @@ const submit = async () => {
     session.setToken(result.token, result.expiresAt)
     session.clearSession()
     isModalOpen.value = false
+    setBodyScrollLock(false)
     await navigateTo('/test')
   }
   catch (error: any) {
@@ -88,11 +94,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeydown)
+  setBodyScrollLock(false)
 })
 
 watch(isModalOpen, (opened) => {
-  if (!process.client) return
-  document.body.style.overflow = opened ? 'hidden' : ''
+  setBodyScrollLock(opened)
 })
 </script>
 
