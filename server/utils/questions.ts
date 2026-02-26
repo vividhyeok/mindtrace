@@ -353,15 +353,30 @@ const QUESTION_BANK: Question[] = [
     text_ko: '나는 대화가 길어지면 생각을 정리하려고 잠깐 거리를 두는 편인가요?',
     rationale_short: 'IE 회복 리듬 확인',
     mbtiAxes: ['IE'],
-    enneagram: ['5', '4'],
+    enneagram: ['7', '3'],
     mode: 'tie_break',
     context: 'daily',
-    pattern: 'internal',
+    pattern: 'behavior',
     cooldownGroup: 'ie_tie_3',
-    ambiguityScore: 0.16,
-    qualityScore: 0.87,
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
     phaseHints: ['B'],
-    transitions: symmetricTransitions({ IE: 0.82 }, { '5': 0.2, '4': 0.12 })
+    transitions: symmetricTransitions({ IE: -0.92 }, { '7': 0.2, '3': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_b_13',
+    text_ko: '나는 머릿속으로만 정리할 때보다 말로 브레인스토밍할 때 결론이 더 빨리 나는 편인가요?',
+    rationale_short: 'ENTP/INTP 표현 경로 분리',
+    mbtiAxes: ['IE', 'SN'],
+    enneagram: ['7', '5'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'ie_tie_4',
+    ambiguityScore: 0.13,
+    qualityScore: 0.92,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ IE: -0.86, SN: -0.32 }, { '7': 0.18, '5': 0.16 })
   }),
   buildQuestion({
     id: 'bank_b_11',
@@ -456,7 +471,23 @@ const QUESTION_BANK: Question[] = [
     ambiguityScore: 0.22,
     qualityScore: 0.84,
     phaseHints: ['C'],
-    transitions: symmetricTransitions({ IE: 0.72 }, { '5': 0.18, '9': 0.12 })
+    transitions: symmetricTransitions({ IE: 0.58 }, { '5': 0.16, '9': 0.1 })
+  }),
+  buildQuestion({
+    id: 'bank_c_09',
+    text_ko: '나는 사람 앞에서 활발하게 말해도, 중요한 결론은 혼자 있을 때 더 잘 정리되는 편인가요?',
+    rationale_short: '겉/속 처리 경로 분리 검증',
+    mbtiAxes: ['IE'],
+    enneagram: ['5', '7'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_7',
+    ambiguityScore: 0.18,
+    qualityScore: 0.9,
+    expressionSignal: 0.88,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ IE: 0.82 }, { '5': 0.14, '7': -0.08 })
   }),
   buildQuestion({
     id: 'bank_c_05',
@@ -521,6 +552,11 @@ const QUESTION_BANK: Question[] = [
 ]
 
 const BANK_BY_ID = new Map(QUESTION_BANK.map(question => [question.id, question]))
+
+export const getQuestionById = (id: string): Question | null => {
+  const found = BANK_BY_ID.get(id)
+  return found ? cloneQuestion(found) : null
+}
 
 const INITIAL_QUESTION_IDS = [
   'bank_a_01',
@@ -623,6 +659,12 @@ const calcAxisUncertainty = (session: SessionState, axis: MbtiAxis) => {
   return 1 - Math.min(1, axisScore / 1.6)
 }
 
+const calcAxisCoverageNeed = (session: SessionState, axis: MbtiAxis) => {
+  const evidence = session.distribution.axisEvidence[axis]
+  const total = (evidence?.positive || 0) + (evidence?.negative || 0)
+  return 1 - Math.min(1, total / 3)
+}
+
 const calcMbtiSplit = (mbtiTop: TypeCandidate<MbtiType>[], axis: MbtiAxis) => {
   const firstProb = mbtiTop
     .filter(candidate => isTypeFirstLetter(candidate.type, axis))
@@ -696,6 +738,12 @@ const scoreCandidate = (
       .map(axis => calcAxisUncertainty(session, axis))
       .reduce((acc, current) => acc + current, 0) / question.targets.mbtiAxes.length
 
+  const axisCoverageNeed = question.targets.mbtiAxes.length === 0
+    ? 0
+    : question.targets.mbtiAxes
+      .map(axis => calcAxisCoverageNeed(session, axis))
+      .reduce((acc, current) => acc + current, 0) / question.targets.mbtiAxes.length
+
   const mbtiSplit = question.targets.mbtiAxes.length === 0
     ? 0
     : question.targets.mbtiAxes
@@ -726,6 +774,7 @@ const scoreCandidate = (
 
   const score =
     axisUncertainty * 1.9
+    + axisCoverageNeed * 1.25
     + mbtiSplit * 1.8
     + enneaSplit * 1.2
     + qualityBoost
@@ -738,6 +787,7 @@ const scoreCandidate = (
     score: Math.round(score * 1000) / 1000,
     breakdown: {
       axisUncertainty: Math.round(axisUncertainty * 1000) / 1000,
+      axisCoverageNeed: Math.round(axisCoverageNeed * 1000) / 1000,
       mbtiSplit: Math.round(mbtiSplit * 1000) / 1000,
       enneaSplit: Math.round(enneaSplit * 1000) / 1000,
       noveltyPenalty: Math.round(noveltyPenalty * 1000) / 1000,

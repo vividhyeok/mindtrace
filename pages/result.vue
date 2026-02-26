@@ -244,14 +244,13 @@ onMounted(async () => {
 
       <div v-else-if="report" class="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
         <article class="space-y-4 sm:space-y-5">
-          <section class="rounded-3xl bg-white/92 p-5 sm:p-6">
+          <section class="rounded-3xl bg-white/95 p-4 sm:p-6">
             <h1 class="font-title text-3xl font-extrabold sm:text-4xl">{{ report.nickname_ko }}</h1>
             <p class="mt-2 text-lg font-bold text-ink/80">{{ report.mbti.top }} · {{ report.enneagram.top }}</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <ResultBadge label="MBTI" :value="report.mbti.top" tone="peach" />
               <ResultBadge label="Enneagram" :value="report.enneagram.top" tone="mint" />
               <ResultBadge label="Quadra" :value="report.style_tags.quadra" tone="sky" />
-              <ResultBadge label="Tone" :value="report.style_tags.tone" tone="lilac" />
             </div>
           </section>
 
@@ -265,7 +264,7 @@ onMounted(async () => {
             <p class="text-sm leading-7 sm:text-base">{{ report.corePattern }}</p>
           </section>
 
-          <section class="rounded-3xl bg-lilac/70 p-5">
+          <section class="rounded-3xl border border-black/5 bg-white/95 p-5">
             <h2 class="mb-2 text-base font-extrabold">겉으로 보이는 모습 vs 실제 기준</h2>
             <p class="text-sm leading-7 sm:text-base">{{ report.outerVsInner }}</p>
           </section>
@@ -283,7 +282,7 @@ onMounted(async () => {
             </ul>
           </section>
 
-          <section class="rounded-3xl bg-peach/50 p-5">
+          <section class="rounded-3xl border border-black/5 bg-white/95 p-5">
             <h2 class="mb-2 text-base font-extrabold">꼬일 때 나오는 패턴 / 주의 포인트</h2>
             <p class="text-sm leading-7 sm:text-base">{{ report.stressPattern }}</p>
           </section>
@@ -435,10 +434,10 @@ onMounted(async () => {
                   <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white" />
                   이미지 생성 중...
                 </span>
-                <span v-else>Export Image</span>
+                <span v-else>이미지 저장</span>
               </BaseButton>
               <BaseButton variant="secondary" @click="copyCaption">
-                {{ copied ? '복사 완료!' : 'Copy caption' }}
+                {{ copied ? '복사 완료!' : '캡션 복사' }}
               </BaseButton>
               <BaseButton variant="ghost" @click="restart">다시 테스트하기</BaseButton>
             </div>

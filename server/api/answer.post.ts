@@ -1,5 +1,6 @@
 import type {
   AnswerResponse,
+  HesitationReason,
   YesNo
 } from '~/types/mindtrace'
 import { requireValidToken } from '~/server/utils/auth'
@@ -26,6 +27,11 @@ interface AnswerBody {
   sessionId?: string
   questionId?: string
   answer?: YesNo
+  meta?: {
+    dwellMs?: number
+    hesitationReason?: HesitationReason
+    deferScoring?: boolean
+  }
 }
 
 interface StageMetrics {
@@ -35,6 +41,16 @@ interface StageMetrics {
 }
 
 const isValidAnswer = (value: unknown): value is YesNo => value === 'yes' || value === 'no'
+const isHesitationReason = (value: unknown): value is HesitationReason => {
+  return value === 'ambiguous_meaning' || value === 'did_other_tasks'
+}
+
+const resolveConfidenceWeight = (meta?: AnswerBody['meta']) => {
+  if (!meta) return 1
+  if (meta.deferScoring) return 0.35
+  if (meta.hesitationReason === 'ambiguous_meaning') return 0.7
+  return 1
+}
 
 const buildProgress = (current: number, max: number) => ({
   current,
@@ -116,15 +132,30 @@ export default defineEventHandler(async (event) => {
 
     const beforeAxis = { ...session.distribution.axisScores }
 
+    const hesitationReason = isHesitationReason(body.meta?.hesitationReason)
+      ? body.meta?.hesitationReason
+      : undefined
+    const confidenceWeight = resolveConfidenceWeight({
+      dwellMs: Number(body.meta?.dwellMs || 0),
+      hesitationReason,
+      deferScoring: Boolean(body.meta?.deferScoring)
+    })
+
     session.answers.push({
       questionId: body.questionId,
       answer: body.answer,
       answeredAt: new Date().toISOString(),
-      targets: currentQuestion.targets
+      targets: currentQuestion.targets,
+      meta: {
+        dwellMs: Number(body.meta?.dwellMs || 0),
+        hesitationReason,
+        deferred: Boolean(body.meta?.deferScoring),
+        confidenceWeight
+      }
     })
 
     const deterministicStarted = Date.now()
-    applyAnswerToDistribution(session.distribution, currentQuestion, body.answer)
+    applyAnswerToDistribution(session.distribution, currentQuestion, body.answer, confidenceWeight)
     stage.deterministicUpdateMs = Date.now() - deterministicStarted
 
     const summary = summarizeDistribution(session.distribution)

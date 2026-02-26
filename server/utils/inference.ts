@@ -428,7 +428,10 @@ const summarizeRecentAnswers = (session: SessionState, limit = 10) => {
       text_ko: question?.text_ko || '',
       targets: question?.targets || answer.targets,
       context: question?.meta?.context || 'daily',
-      mode: question?.meta?.mode || 'axis_scan'
+      mode: question?.meta?.mode || 'axis_scan',
+      hesitationReason: answer.meta?.hesitationReason || null,
+      deferred: Boolean(answer.meta?.deferred),
+      confidenceWeight: answer.meta?.confidenceWeight || 1
     }
   })
 }
