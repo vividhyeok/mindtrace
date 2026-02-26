@@ -126,6 +126,9 @@ const normalizeReport = (input: any, sid: string): FinalReport => {
     short_caption_ko:
       (typeof input?.short_caption_ko === 'string' && input.short_caption_ko.trim()) ||
       summaryShort,
+    deepInsights: input?.deepInsights && typeof input.deepInsights === 'object'
+      ? input.deepInsights
+      : undefined,
     style_tags: {
       quadra:
         input?.style_tags?.quadra === 'NT' ||
@@ -239,7 +242,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-else-if="report" class="grid gap-6 lg:grid-cols-[1.45fr_1fr]">
+      <div v-else-if="report" class="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
         <article class="space-y-4 sm:space-y-5">
           <section class="rounded-3xl bg-white/92 p-5 sm:p-6">
             <h1 class="font-title text-3xl font-extrabold sm:text-4xl">{{ report.nickname_ko }}</h1>
@@ -303,6 +306,52 @@ onMounted(async () => {
             </ul>
           </section>
 
+          <section v-if="report.deepInsights" class="rounded-3xl bg-white/92 p-4 sm:p-5">
+            <h2 class="mb-2 text-base font-extrabold">심층 분석표</h2>
+            <p class="text-sm leading-7 sm:text-base">{{ report.deepInsights.responsePatternSummary }}</p>
+
+            <div class="mt-4 overflow-x-auto">
+              <table class="min-w-[540px] w-full text-left text-sm">
+                <thead>
+                  <tr class="text-ink/70">
+                    <th class="px-2 py-2">축</th>
+                    <th class="px-2 py-2">기울기</th>
+                    <th class="px-2 py-2">신뢰도</th>
+                    <th class="px-2 py-2">해석</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in report.deepInsights.axisNarratives"
+                    :key="`axis-${item.axis}`"
+                    class="border-t border-ink/8 align-top"
+                  >
+                    <td class="px-2 py-2 font-bold">{{ item.axis }}</td>
+                    <td class="px-2 py-2">{{ item.leaning }}</td>
+                    <td class="px-2 py-2">{{ toPercent(item.confidence) }}</td>
+                    <td class="px-2 py-2 text-ink/80">{{ item.summary }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p class="mt-4 text-sm leading-7 sm:text-base">{{ report.deepInsights.confidenceCommentary }}</p>
+
+            <div class="mt-4 space-y-2">
+              <h3 class="text-sm font-extrabold">응답 근거 인용</h3>
+              <div
+                v-for="(evidence, idx) in report.deepInsights.evidenceHighlights"
+                :key="`evidence-${idx}`"
+                class="rounded-2xl bg-sky/35 p-3"
+              >
+                <p class="text-sm font-bold">Q. {{ evidence.question }}</p>
+                <p class="mt-1 text-sm">답변: {{ evidence.answer === 'yes' ? '그렇다' : '아니다' }}</p>
+                <p class="mt-1 text-sm text-ink/80">해석: {{ evidence.interpretation }}</p>
+                <p class="mt-1 text-sm text-ink/80">영향: {{ evidence.impact }}</p>
+              </div>
+            </div>
+          </section>
+
           <section class="rounded-3xl bg-white/92 p-5">
             <h2 class="mb-2 text-base font-extrabold">왜 이 결과로 봤는지</h2>
             <p class="text-sm leading-7 sm:text-base">{{ report.whyThisType }}</p>
@@ -350,7 +399,7 @@ onMounted(async () => {
           </section>
         </article>
 
-        <aside class="space-y-4">
+        <aside class="space-y-4 xl:pl-1">
           <div class="rounded-3xl bg-white/92 p-4 lg:sticky lg:top-6">
             <h2 class="mb-3 text-sm font-extrabold">공유 카드</h2>
             <div class="mb-4 flex gap-2">
@@ -372,7 +421,7 @@ onMounted(async () => {
               </BaseButton>
             </div>
 
-            <div class="flex justify-center rounded-3xl bg-lilac/50 p-4">
+            <div class="overflow-x-auto rounded-3xl bg-lilac/50 p-2 sm:p-4">
               <ShareCard
                 ref="shareCardRef"
                 :report="report"

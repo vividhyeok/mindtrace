@@ -17,8 +17,8 @@ const toPositiveInt = (value: unknown, fallback: number) => {
 
 export const getAppConfig = (): AppConfig => {
   const runtime = useRuntimeConfig()
-  const maxQuestions = toPositiveInt(runtime.maxQuestions, 20)
-  const minQuestions = Math.min(toPositiveInt(runtime.minQuestions, 8), maxQuestions)
+  const maxQuestions = toPositiveInt(runtime.maxQuestions, 14)
+  const minQuestions = Math.min(toPositiveInt(runtime.minQuestions, 6), maxQuestions)
 
   return {
     openaiApiKey: String(runtime.openaiApiKey || ''),

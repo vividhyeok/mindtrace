@@ -389,7 +389,7 @@ export const shouldStop = (
     }
   }
 
-  if (stabilityScore < 0.62) {
+  if (stabilityScore < 0.58) {
     return {
       done: false,
       reason: 'continue',
