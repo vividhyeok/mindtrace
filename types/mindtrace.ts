@@ -184,6 +184,28 @@ export interface QuestionSelectionResult {
   ranked: QuestionSelectionCandidate[]
 }
 
+
+export interface AxisNarrativeItem {
+  axis: MbtiAxis
+  leaning: string
+  confidence: number
+  summary: string
+}
+
+export interface ResponseEvidenceItem {
+  question: string
+  answer: YesNo
+  interpretation: string
+  impact: string
+}
+
+export interface DeepInsights {
+  responsePatternSummary: string
+  axisNarratives: AxisNarrativeItem[]
+  evidenceHighlights: ResponseEvidenceItem[]
+  confidenceCommentary: string
+}
+
 export interface FinalReport {
   sessionId: string
   mbti: {
@@ -210,6 +232,7 @@ export interface FinalReport {
   narrative_ko: string
   misperception_ko: string
   short_caption_ko: string
+  deepInsights?: DeepInsights
   style_tags: {
     quadra: 'NT' | 'ST' | 'NF' | 'SF'
     tone: 'C'
@@ -285,6 +308,7 @@ export interface FinalizeModelOutput {
   narrative_ko: string
   misperception_ko: string
   short_caption_ko: string
+  deepInsights?: DeepInsights
   style_tags: {
     quadra: 'NT' | 'ST' | 'NF' | 'SF'
     tone: 'C'
