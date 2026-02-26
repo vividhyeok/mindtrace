@@ -350,8 +350,8 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_10',
-    text_ko: '나는 아이디어 토론이 길어질수록 오히려 생각이 더 선명해지는 편인가요?',
-    rationale_short: 'IE 발화 에너지 확인',
+    text_ko: '나는 대화가 길어지면 생각을 정리하려고 잠깐 거리를 두는 편인가요?',
+    rationale_short: 'IE 회복 리듬 확인',
     mbtiAxes: ['IE'],
     enneagram: ['7', '3'],
     mode: 'tie_break',

@@ -618,8 +618,7 @@ export const finalizeWithModel = async (
     '- deepInsights.responsePatternSummary: 4~6문장',
     '- deepInsights.axisNarratives: 4개 축 모두 포함, confidence는 0~1',
     '- deepInsights.evidenceHighlights: 최근 답변 중 4~6개를 인용해서 질문/응답/해석/영향을 작성',
-    '- deepInsights.confidenceCommentary: 3~5문장으로 신뢰도/한계/추가 확인 포인트 정리',
-    '- hesitationReason/deferred/confidenceWeight가 있는 답변은 모든 유형 해석에서 공통적으로 "판단 유보" 또는 "해석 난이도" 신호로 반영 강도를 구분'
+    '- deepInsights.confidenceCommentary: 3~5문장으로 신뢰도/한계/추가 확인 포인트 정리'
   ].join('\n')
 
   const model = await requestO3Json<FinalizeModelOutput>({
