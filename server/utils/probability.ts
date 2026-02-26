@@ -172,12 +172,14 @@ const resolveAnswerDelta = (question: Question, answer: YesNo) => {
 export const applyAnswerToDistribution = (
   distribution: DistributionState,
   question: Question,
-  answer: YesNo
+  answer: YesNo,
+  confidenceWeight = 1
 ): DistributionState => {
+  const safeWeight = Math.max(0, Math.min(1, confidenceWeight || 0))
   const { mbtiDelta, enneaDelta } = resolveAnswerDelta(question, answer)
 
   for (const axis of Object.keys(mbtiDelta) as MbtiAxis[]) {
-    const delta = Number(mbtiDelta[axis] || 0)
+    const delta = Number(mbtiDelta[axis] || 0) * safeWeight
     distribution.axisScores[axis] += delta
 
     if (delta > 0) {
@@ -189,7 +191,7 @@ export const applyAnswerToDistribution = (
   }
 
   for (const ennea of Object.keys(enneaDelta) as EnneagramType[]) {
-    const delta = Number(enneaDelta[ennea] || 0)
+    const delta = Number(enneaDelta[ennea] || 0) * safeWeight
     distribution.enneagramScores[ennea] += delta
   }
 
@@ -389,7 +391,7 @@ export const shouldStop = (
     }
   }
 
-  if (stabilityScore < 0.62) {
+  if (stabilityScore < 0.58) {
     return {
       done: false,
       reason: 'continue',

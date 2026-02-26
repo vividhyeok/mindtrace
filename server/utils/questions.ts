@@ -99,7 +99,7 @@ const buildQuestion = (draft: QuestionDraft): Question => {
 const QUESTION_BANK: Question[] = [
   buildQuestion({
     id: 'bank_a_01',
-    text_ko: '처음 만난 모임에서는 말하기보다 분위기를 먼저 살피는 편이다.',
+    text_ko: '나는 처음 만난 모임에서는 말하기보다 분위기를 먼저 살피는 편인가요?',
     rationale_short: '에너지 방향 스캔',
     mbtiAxes: ['IE'],
     enneagram: ['5', '9'],
@@ -113,7 +113,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_02',
-    text_ko: '지친 날에도 사람을 만나면 오히려 에너지가 살아나는 편이다.',
+    text_ko: '나는 지친 날에도 사람을 만나면 오히려 에너지가 살아나는 편인가요?',
     rationale_short: '외향 회복성 스캔',
     mbtiAxes: ['IE'],
     enneagram: ['3', '7'],
@@ -127,7 +127,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_03',
-    text_ko: '새 주제를 배울 때는 개념보다 예시부터 확인해야 이해가 빠르다.',
+    text_ko: '나는 새 주제를 배울 때 개념보다 예시부터 확인해야 이해가 빠른 편인가요?',
     rationale_short: '정보 처리 방향 스캔',
     mbtiAxes: ['SN'],
     enneagram: ['6'],
@@ -141,7 +141,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_04',
-    text_ko: '새 아이디어를 들으면 적용법보다 가능성부터 먼저 떠오르는 편이다.',
+    text_ko: '나는 새 아이디어를 들으면 적용법보다 가능성부터 먼저 떠오르는 편인가요?',
     rationale_short: '추상 확장 스캔',
     mbtiAxes: ['SN'],
     enneagram: ['7', '4'],
@@ -155,7 +155,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_05',
-    text_ko: '의견 충돌이 생기면 관계보다 기준 정리부터 하는 편이다.',
+    text_ko: '나는 의견 충돌이 생기면 관계보다 기준 정리부터 하는 편인가요?',
     rationale_short: '판단 기준 스캔',
     mbtiAxes: ['TF'],
     enneagram: ['1', '8'],
@@ -170,7 +170,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_06',
-    text_ko: '가까운 사람이 힘들어하면 해결보다 감정 반응부터 맞춰주는 편이다.',
+    text_ko: '나는 가까운 사람이 힘들어하면 해결보다 감정 반응부터 맞춰주는 편인가요?',
     rationale_short: '공감 우선 스캔',
     mbtiAxes: ['TF'],
     enneagram: ['2', '9'],
@@ -185,7 +185,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_07',
-    text_ko: '일을 시작하기 전에 순서표를 먼저 만드는 편이다.',
+    text_ko: '나는 일을 시작하기 전에 순서표를 먼저 만드는 편인가요?',
     rationale_short: '계획 선호 스캔',
     mbtiAxes: ['JP'],
     enneagram: ['1', '6'],
@@ -199,7 +199,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_a_08',
-    text_ko: '계획이 있어도 더 나은 아이디어가 보이면 바로 바꾸는 편이다.',
+    text_ko: '나는 계획이 있어도 더 나은 아이디어가 보이면 바로 바꾸는 편인가요?',
     rationale_short: '유연 전환 스캔',
     mbtiAxes: ['JP'],
     enneagram: ['7', '3'],
@@ -214,7 +214,7 @@ const QUESTION_BANK: Question[] = [
 
   buildQuestion({
     id: 'bank_b_01',
-    text_ko: '업무 회의에서 충돌이 나면 말하기 전에 근거를 메모로 정리한다.',
+    text_ko: '나는 업무 회의에서 충돌이 나면 말하기 전에 근거를 메모로 정리하나요?',
     rationale_short: 'TF 경합 분리',
     mbtiAxes: ['TF'],
     enneagram: ['1', '5'],
@@ -230,7 +230,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_02',
-    text_ko: '업무 요청을 받으면 기대효과보다 리스크부터 먼저 점검한다.',
+    text_ko: '나는 업무 요청을 받으면 기대효과보다 리스크부터 먼저 점검하나요?',
     rationale_short: 'SN/JP 경합 분리',
     mbtiAxes: ['SN', 'JP'],
     enneagram: ['6'],
@@ -245,7 +245,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_03',
-    text_ko: '주말 계획이 비면 즉흥 약속보다 혼자 정리 시간을 먼저 잡는다.',
+    text_ko: '나는 주말 계획이 비면 즉흥 약속보다 혼자 정리 시간을 먼저 잡나요?',
     rationale_short: 'IE/JP 경합 분리',
     mbtiAxes: ['IE', 'JP'],
     enneagram: ['5', '9'],
@@ -260,7 +260,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_04',
-    text_ko: '정보를 설명할 때 큰 방향보다 세부 사실을 먼저 말하는 편이다.',
+    text_ko: '나는 정보를 설명할 때 큰 방향보다 세부 사실을 먼저 말하는 편인가요?',
     rationale_short: 'SN 경합 분리',
     mbtiAxes: ['SN'],
     enneagram: ['6', '1'],
@@ -275,7 +275,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_05',
-    text_ko: '결정 직전에는 가능성보다 실행 조건이 맞는지 먼저 본다.',
+    text_ko: '나는 결정 직전에 가능성보다 실행 조건이 맞는지 먼저 보나요?',
     rationale_short: 'SN/JP 실행 분리',
     mbtiAxes: ['SN', 'JP'],
     enneagram: ['3', '6'],
@@ -290,7 +290,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_06',
-    text_ko: '친구 고민을 들으면 공감보다 해결 순서를 먼저 떠올리는 편이다.',
+    text_ko: '나는 친구 고민을 들으면 공감보다 해결 순서를 먼저 떠올리는 편인가요?',
     rationale_short: 'TF 경합 분리',
     mbtiAxes: ['TF'],
     enneagram: ['1', '3'],
@@ -305,7 +305,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_07',
-    text_ko: '팀에서 아이디어를 낼 때 완성형보다 초안부터 먼저 공유하는 편이다.',
+    text_ko: '나는 팀에서 아이디어를 낼 때 완성형보다 초안부터 먼저 공유하는 편인가요?',
     rationale_short: 'IE/JP 공개 반응 분리',
     mbtiAxes: ['IE', 'JP'],
     enneagram: ['7', '3'],
@@ -320,7 +320,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_08',
-    text_ko: '정리되지 않은 상태로 시작하는 것보다 준비가 늦어도 구조를 맞춘다.',
+    text_ko: '나는 정리되지 않은 상태로 시작하는 것보다 준비가 늦어도 구조를 맞추나요?',
     rationale_short: 'JP 안정성 분리',
     mbtiAxes: ['JP'],
     enneagram: ['1', '6'],
@@ -335,7 +335,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_09',
-    text_ko: '관계가 걸려 있어도 기준이 어긋나면 그대로 지적하는 편이다.',
+    text_ko: '나는 관계가 걸려 있어도 기준이 어긋나면 그대로 지적하는 편인가요?',
     rationale_short: 'TF 강도 확인',
     mbtiAxes: ['TF'],
     enneagram: ['8', '1'],
@@ -350,22 +350,37 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_10',
-    text_ko: '대화가 길어지면 생각을 정리하려고 잠깐 거리를 두는 편이다.',
-    rationale_short: 'IE 회복 리듬 확인',
+    text_ko: '나는 아이디어 토론이 길어질수록 오히려 생각이 더 선명해지는 편인가요?',
+    rationale_short: 'IE 토론 에너지 확인',
     mbtiAxes: ['IE'],
-    enneagram: ['5', '4'],
+    enneagram: ['7', '3'],
     mode: 'tie_break',
     context: 'daily',
-    pattern: 'internal',
+    pattern: 'behavior',
     cooldownGroup: 'ie_tie_3',
-    ambiguityScore: 0.16,
-    qualityScore: 0.87,
+    ambiguityScore: 0.14,
+    qualityScore: 0.9,
     phaseHints: ['B'],
-    transitions: symmetricTransitions({ IE: 0.82 }, { '5': 0.2, '4': 0.12 })
+    transitions: symmetricTransitions({ IE: -0.92 }, { '7': 0.2, '3': 0.12 })
+  }),
+  buildQuestion({
+    id: 'bank_b_13',
+    text_ko: '나는 머릿속으로만 정리할 때보다 말로 브레인스토밍할 때 결론이 더 빨리 나는 편인가요?',
+    rationale_short: 'ENTP/INTP 표현 경로 분리',
+    mbtiAxes: ['IE', 'SN'],
+    enneagram: ['7', '5'],
+    mode: 'tie_break',
+    context: 'work',
+    pattern: 'behavior',
+    cooldownGroup: 'ie_tie_4',
+    ambiguityScore: 0.13,
+    qualityScore: 0.92,
+    phaseHints: ['B', 'C'],
+    transitions: symmetricTransitions({ IE: -0.86, SN: -0.32 }, { '7': 0.18, '5': 0.16 })
   }),
   buildQuestion({
     id: 'bank_b_11',
-    text_ko: '상황이 바뀌면 계획 수정표를 바로 만들어 흐름을 다시 맞춘다.',
+    text_ko: '나는 상황이 바뀌면 계획 수정표를 바로 만들어 흐름을 다시 맞추나요?',
     rationale_short: 'JP 조정 방식 분리',
     mbtiAxes: ['JP'],
     enneagram: ['1', '3'],
@@ -380,7 +395,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_12',
-    text_ko: '새로운 방식을 볼 때 구체 장면보다 원리부터 이해하려는 편이다.',
+    text_ko: '나는 새로운 방식을 볼 때 구체 장면보다 원리부터 이해하려는 편인가요?',
     rationale_short: 'SN 재확인',
     mbtiAxes: ['SN'],
     enneagram: ['5', '7'],
@@ -396,7 +411,7 @@ const QUESTION_BANK: Question[] = [
 
   buildQuestion({
     id: 'bank_c_01',
-    text_ko: '겉으로 공감해도 실제 판단은 해결 순서로 정리되는 편이다.',
+    text_ko: '나는 겉으로 공감해도 실제 판단은 해결 순서로 정리되는 편인가요?',
     rationale_short: '겉/속 불일치 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '3', '5'],
@@ -413,7 +428,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_02',
-    text_ko: '맞춰서 대화해도 속으로는 기준의 타당성을 계속 확인하는 편이다.',
+    text_ko: '나는 맞춰서 대화해도 속으로는 기준의 타당성을 계속 확인하는 편인가요?',
     rationale_short: '내적 판단 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '6'],
@@ -430,7 +445,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_03',
-    text_ko: '유연해 보이려 해도 최종 선택은 익숙한 방식으로 돌아오는 편이다.',
+    text_ko: '나는 유연해 보이려 해도 최종 선택은 익숙한 방식으로 돌아오는 편인가요?',
     rationale_short: '표면 유연성 검증',
     mbtiAxes: ['JP'],
     enneagram: ['6', '9'],
@@ -445,7 +460,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_04',
-    text_ko: '밝게 반응해도 결정 직전에는 혼자 정리 시간이 꼭 필요한 편이다.',
+    text_ko: '나는 밝게 반응해도 결정 직전에는 혼자 정리 시간이 꼭 필요한 편인가요?',
     rationale_short: '표현/회복 분리 검증',
     mbtiAxes: ['IE'],
     enneagram: ['5', '9'],
@@ -456,11 +471,27 @@ const QUESTION_BANK: Question[] = [
     ambiguityScore: 0.22,
     qualityScore: 0.84,
     phaseHints: ['C'],
-    transitions: symmetricTransitions({ IE: 0.72 }, { '5': 0.18, '9': 0.12 })
+    transitions: symmetricTransitions({ IE: 0.58 }, { '5': 0.16, '9': 0.1 })
+  }),
+  buildQuestion({
+    id: 'bank_c_09',
+    text_ko: '나는 사람 앞에서 활발하게 말해도, 중요한 결론은 혼자 있을 때 더 잘 정리되는 편인가요?',
+    rationale_short: '겉/속 처리 경로 분리 검증',
+    mbtiAxes: ['IE'],
+    enneagram: ['5', '7'],
+    mode: 'validation',
+    context: 'daily',
+    pattern: 'incongruence',
+    cooldownGroup: 'val_incon_7',
+    ambiguityScore: 0.18,
+    qualityScore: 0.9,
+    expressionSignal: 0.88,
+    phaseHints: ['C'],
+    transitions: symmetricTransitions({ IE: 0.82 }, { '5': 0.14, '7': -0.08 })
   }),
   buildQuestion({
     id: 'bank_c_05',
-    text_ko: '사적인 갈등에서도 감정 공감보다 원인 분해가 먼저 떠오르는 편이다.',
+    text_ko: '나는 사적인 갈등에서도 감정 공감보다 원인 분해가 먼저 떠오르는 편인가요?',
     rationale_short: '맥락 전이 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '5'],
@@ -475,7 +506,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_06',
-    text_ko: '업무에서는 공감 표현을 해도 실행 체크리스트를 끝까지 붙드는 편이다.',
+    text_ko: '나는 업무에서는 공감 표현을 해도 실행 체크리스트를 끝까지 붙드는 편인가요?',
     rationale_short: '실행 일관성 검증',
     mbtiAxes: ['JP', 'TF'],
     enneagram: ['1', '3'],
@@ -490,7 +521,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_07',
-    text_ko: '즉흥적으로 보이는 날에도 중요한 결정은 기준표를 다시 확인하는 편이다.',
+    text_ko: '나는 즉흥적으로 보이는 날에도 중요한 결정은 기준표를 다시 확인하는 편인가요?',
     rationale_short: '즉흥/기준 분리 검증',
     mbtiAxes: ['JP'],
     enneagram: ['6', '1'],
@@ -505,7 +536,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_08',
-    text_ko: '겉으로는 맞춰도 결론은 내 기준과 근거가 맞아야 선택하는 편이다.',
+    text_ko: '나는 겉으로는 맞춰도 결론은 내 기준과 근거가 맞아야 선택하는 편인가요?',
     rationale_short: '판단 고정성 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '8'],
@@ -521,6 +552,11 @@ const QUESTION_BANK: Question[] = [
 ]
 
 const BANK_BY_ID = new Map(QUESTION_BANK.map(question => [question.id, question]))
+
+export const getQuestionById = (id: string): Question | null => {
+  const found = BANK_BY_ID.get(id)
+  return found ? cloneQuestion(found) : null
+}
 
 const INITIAL_QUESTION_IDS = [
   'bank_a_01',
@@ -593,9 +629,13 @@ export const determinePhase = (session: SessionState, maxQuestions: number): Que
     .filter(value => Math.abs(value) < 0.58)
     .length
 
-  if (answerCount < 6) return 'A'
+  if (answerCount < 5) return 'A'
 
-  if (answerCount >= Math.min(maxQuestions - 4, 10) || uncertainAxisCount <= 1) {
+  if (answerCount < 8 && uncertainAxisCount >= 3) {
+    return 'B'
+  }
+
+  if (answerCount >= Math.min(maxQuestions - 3, 8) || uncertainAxisCount <= 1) {
     return 'C'
   }
 
@@ -805,4 +845,3 @@ export const selectNextQuestionFromBank = (
     ranked: selected.ranked
   }
 }
-
