@@ -151,6 +151,7 @@ export interface StopCheckDecision {
     | 'threshold_met'
     | 'phase_not_ready'
     | 'validation_incomplete'
+    | 'axis_coverage_low'
   snapshot: StopSnapshot
   metrics: {
     answerCount: number
@@ -165,11 +166,14 @@ export interface StopCheckDecision {
     phase?: QuestionPhase
     validationCount?: number
     requiredValidationCount?: number
+    axisCoverageScore?: number
+    axisBalanceScore?: number
   }
 }
 
 export interface QuestionSelectionBreakdown {
   axisUncertainty: number
+  axisCoverageNeed: number
   mbtiSplit: number
   enneaSplit: number
   noveltyPenalty: number

@@ -659,6 +659,12 @@ const calcAxisUncertainty = (session: SessionState, axis: MbtiAxis) => {
   return 1 - Math.min(1, axisScore / 1.6)
 }
 
+const calcAxisCoverageNeed = (session: SessionState, axis: MbtiAxis) => {
+  const evidence = session.distribution.axisEvidence[axis]
+  const total = (evidence?.positive || 0) + (evidence?.negative || 0)
+  return 1 - Math.min(1, total / 3)
+}
+
 const calcMbtiSplit = (mbtiTop: TypeCandidate<MbtiType>[], axis: MbtiAxis) => {
   const firstProb = mbtiTop
     .filter(candidate => isTypeFirstLetter(candidate.type, axis))
@@ -732,6 +738,12 @@ const scoreCandidate = (
       .map(axis => calcAxisUncertainty(session, axis))
       .reduce((acc, current) => acc + current, 0) / question.targets.mbtiAxes.length
 
+  const axisCoverageNeed = question.targets.mbtiAxes.length === 0
+    ? 0
+    : question.targets.mbtiAxes
+      .map(axis => calcAxisCoverageNeed(session, axis))
+      .reduce((acc, current) => acc + current, 0) / question.targets.mbtiAxes.length
+
   const mbtiSplit = question.targets.mbtiAxes.length === 0
     ? 0
     : question.targets.mbtiAxes
@@ -762,6 +774,7 @@ const scoreCandidate = (
 
   const score =
     axisUncertainty * 1.9
+    + axisCoverageNeed * 1.25
     + mbtiSplit * 1.8
     + enneaSplit * 1.2
     + qualityBoost
@@ -774,6 +787,7 @@ const scoreCandidate = (
     score: Math.round(score * 1000) / 1000,
     breakdown: {
       axisUncertainty: Math.round(axisUncertainty * 1000) / 1000,
+      axisCoverageNeed: Math.round(axisCoverageNeed * 1000) / 1000,
       mbtiSplit: Math.round(mbtiSplit * 1000) / 1000,
       enneaSplit: Math.round(enneaSplit * 1000) / 1000,
       noveltyPenalty: Math.round(noveltyPenalty * 1000) / 1000,
