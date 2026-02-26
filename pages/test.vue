@@ -31,6 +31,7 @@ const loading = ref(true)
 const answering = ref(false)
 const finalizing = ref(false)
 const errorMessage = ref('')
+const infoMessage = ref('')
 const sessionId = ref('')
 const currentQuestion = ref<PublicQuestion | null>(null)
 const progress = ref({ current: 0, max: 20, ratio: 0 })
@@ -44,6 +45,7 @@ const pendingAnswer = ref<'yes' | 'no' | null>(null)
 const longStayDecision = ref<{ open: boolean, dwellMs: number }>({ open: false, dwellMs: 0 })
 const hesitationReason = ref<'ambiguous_meaning' | 'did_other_tasks'>('ambiguous_meaning')
 const deferScoring = ref(false)
+const forceHesitationPrompt = ref(false)
 
 const progressVisual = computed(() => {
   return Math.min(94, 14 + progress.value.current * 6)
@@ -265,14 +267,16 @@ const submitAnswer = async (answer: 'yes' | 'no') => {
   if (!currentQuestion.value || answering.value || finalizing.value) return
 
   const dwellMs = Date.now() - questionStartedAt.value
-  const exceededAbsolute = dwellMs >= 14000
-  const exceededRelative = previousDwellMs.value > 0 && dwellMs >= Math.round(previousDwellMs.value * 1.4)
+  const exceededAbsolute = dwellMs >= 12000
+  const exceededRelative = previousDwellMs.value > 0 && dwellMs >= Math.round(previousDwellMs.value * 1.25)
+  const firstLongDwell = previousDwellMs.value === 0 && exceededAbsolute
 
-  if (exceededAbsolute && exceededRelative) {
+  if ((exceededAbsolute && exceededRelative) || firstLongDwell || forceHesitationPrompt.value) {
     pendingAnswer.value = answer
     longStayDecision.value = { open: true, dwellMs }
     hesitationReason.value = 'ambiguous_meaning'
     deferScoring.value = false
+    forceHesitationPrompt.value = false
     return
   }
 
@@ -347,11 +351,17 @@ const cancelLongStayDecision = () => {
   pendingAnswer.value = null
 }
 
+const requestHesitationReview = () => {
+  forceHesitationPrompt.value = true
+  infoMessage.value = '다음 응답 시 애매함/유보 여부를 먼저 확인할게요.'
+}
+
 const undoLastAnswer = async () => {
   if (!sessionId.value || !canUndo.value) return
 
   answering.value = true
   errorMessage.value = ''
+  infoMessage.value = ''
 
   try {
     const result = await api.post<AnswerResponse>('/api/undo', {
@@ -361,6 +371,7 @@ const undoLastAnswer = async () => {
     progress.value = result.progress
     currentQuestion.value = result.nextQuestion || null
     questionStartedAt.value = Date.now()
+    infoMessage.value = '이전 답변으로 돌아왔어요. 답변을 다시 선택해 주세요.'
   }
   catch (error: any) {
     if (applyAuthIssue(error)) {
@@ -431,14 +442,23 @@ onMounted(async () => {
             <p class="text-xl font-bold leading-8 sm:text-2xl">{{ currentQuestion.text_ko }}</p>
 
             <div class="mt-4">
-              <BaseButton
-                variant="ghost"
-                class="w-full sm:w-auto"
-                :disabled="!canUndo"
-                @click="undoLastAnswer"
-              >
-                이전 대답으로 돌아가기
-              </BaseButton>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <BaseButton
+                  variant="ghost"
+                  class="w-full"
+                  :disabled="!canUndo"
+                  @click="undoLastAnswer"
+                >
+                  이전 질문으로 돌아가기
+                </BaseButton>
+                <BaseButton
+                  variant="ghost"
+                  class="w-full"
+                  @click="requestHesitationReview"
+                >
+                  질문이 애매해요
+                </BaseButton>
+              </div>
             </div>
 
             <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -505,6 +525,10 @@ onMounted(async () => {
 
         <div v-if="errorMessage" class="mt-4 rounded-3xl bg-[#ffe0ec] px-4 py-3 text-sm font-bold text-[#b93b64]">
           {{ errorMessage }}
+        </div>
+
+        <div v-if="infoMessage" class="mt-4 rounded-3xl bg-white/85 px-4 py-3 text-sm font-bold text-ink/80">
+          {{ infoMessage }}
         </div>
       </div>
     </section>

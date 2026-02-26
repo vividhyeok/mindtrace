@@ -242,7 +242,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-else-if="report" class="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
+      <div v-else-if="report" class="grid gap-5 xl:grid-cols-[1.45fr_1fr]">
         <article class="space-y-4 sm:space-y-5">
           <section class="rounded-3xl bg-white/95 p-4 sm:p-6">
             <h1 class="font-title text-3xl font-extrabold sm:text-4xl">{{ report.nickname_ko }}</h1>
@@ -306,7 +306,7 @@ onMounted(async () => {
           </section>
 
           <section v-if="report.deepInsights" class="rounded-3xl bg-white/92 p-4 sm:p-5">
-            <h2 class="mb-2 text-base font-extrabold">심층 분석표</h2>
+            <h2 class="mb-2 text-base font-extrabold">심층 분석 요약</h2>
             <p class="text-sm leading-7 sm:text-base">{{ report.deepInsights.responsePatternSummary }}</p>
 
             <div class="mt-4 overflow-x-auto">
@@ -420,12 +420,16 @@ onMounted(async () => {
               </BaseButton>
             </div>
 
-            <div class="overflow-x-auto rounded-3xl bg-lilac/50 p-2 sm:p-4">
-              <ShareCard
-                ref="shareCardRef"
-                :report="report"
-                :ratio="ratio"
-              />
+            <div class="overflow-x-auto rounded-3xl bg-lilac/35 p-2 sm:p-4">
+              <div class="flex min-w-0 justify-center">
+                <div class="origin-top scale-[0.9] sm:scale-100">
+                  <ShareCard
+                    ref="shareCardRef"
+                    :report="report"
+                    :ratio="ratio"
+                  />
+                </div>
+              </div>
             </div>
 
             <div class="mt-4 grid grid-cols-1 gap-2">

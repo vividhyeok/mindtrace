@@ -214,7 +214,7 @@ const QUESTION_BANK: Question[] = [
 
   buildQuestion({
     id: 'bank_b_01',
-    text_ko: '나는 업무 회의에서 충돌이 나면 말하기 전에 근거를 메모로 정리하나요?',
+    text_ko: '나는 회의에서 의견이 갈릴 때, 바로 말하기보다 근거를 먼저 정리하는 편인가요?',
     rationale_short: 'TF 경합 분리',
     mbtiAxes: ['TF'],
     enneagram: ['1', '5'],
@@ -230,7 +230,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_02',
-    text_ko: '나는 업무 요청을 받으면 기대효과보다 리스크부터 먼저 점검하나요?',
+    text_ko: '나는 일을 맡으면 기대효과보다 실패 가능성을 먼저 점검하는 편인가요?',
     rationale_short: 'SN/JP 경합 분리',
     mbtiAxes: ['SN', 'JP'],
     enneagram: ['6'],
@@ -245,7 +245,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_03',
-    text_ko: '나는 주말 계획이 비면 즉흥 약속보다 혼자 정리 시간을 먼저 잡나요?',
+    text_ko: '나는 시간이 비면 즉흥 약속보다 혼자 정리 시간을 먼저 잡는 편인가요?',
     rationale_short: 'IE/JP 경합 분리',
     mbtiAxes: ['IE', 'JP'],
     enneagram: ['5', '9'],
@@ -320,7 +320,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_08',
-    text_ko: '나는 정리되지 않은 상태로 시작하는 것보다 준비가 늦어도 구조를 맞추나요?',
+    text_ko: '나는 빠르게 시작하는 것보다, 준비가 늦어져도 틀을 맞추고 시작하는 편인가요?',
     rationale_short: 'JP 안정성 분리',
     mbtiAxes: ['JP'],
     enneagram: ['1', '6'],
@@ -350,8 +350,8 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_10',
-    text_ko: '나는 대화가 길어지면 생각을 정리하려고 잠깐 거리를 두는 편인가요?',
-    rationale_short: 'IE 회복 리듬 확인',
+    text_ko: '나는 아이디어 토론이 길어질수록 오히려 생각이 더 선명해지는 편인가요?',
+    rationale_short: 'IE 발화 에너지 확인',
     mbtiAxes: ['IE'],
     enneagram: ['7', '3'],
     mode: 'tie_break',
@@ -380,7 +380,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_b_11',
-    text_ko: '나는 상황이 바뀌면 계획 수정표를 바로 만들어 흐름을 다시 맞추나요?',
+    text_ko: '나는 변수가 생기면 바로 계획을 다시 정리해 흐름을 맞추는 편인가요?',
     rationale_short: 'JP 조정 방식 분리',
     mbtiAxes: ['JP'],
     enneagram: ['1', '3'],
@@ -411,7 +411,7 @@ const QUESTION_BANK: Question[] = [
 
   buildQuestion({
     id: 'bank_c_01',
-    text_ko: '나는 겉으로 공감해도 실제 판단은 해결 순서로 정리되는 편인가요?',
+    text_ko: '나는 겉으로 공감해도, 실제 결정을 할 때는 해결 순서를 먼저 따지는 편인가요?',
     rationale_short: '겉/속 불일치 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '3', '5'],
@@ -428,7 +428,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_02',
-    text_ko: '나는 맞춰서 대화해도 속으로는 기준의 타당성을 계속 확인하는 편인가요?',
+    text_ko: '나는 상대에게 맞춰 말해도, 속으로는 내 기준이 타당한지 계속 확인하는 편인가요?',
     rationale_short: '내적 판단 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '6'],
@@ -445,7 +445,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_03',
-    text_ko: '나는 유연해 보이려 해도 최종 선택은 익숙한 방식으로 돌아오는 편인가요?',
+    text_ko: '나는 유연하게 보이려 해도, 최종 선택은 익숙한 방식으로 돌아오는 편인가요?',
     rationale_short: '표면 유연성 검증',
     mbtiAxes: ['JP'],
     enneagram: ['6', '9'],
@@ -460,7 +460,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_04',
-    text_ko: '나는 밝게 반응해도 결정 직전에는 혼자 정리 시간이 꼭 필요한 편인가요?',
+    text_ko: '나는 사람들과 밝게 반응해도, 중요한 결정 전에는 혼자 정리 시간이 필요한 편인가요?',
     rationale_short: '표현/회복 분리 검증',
     mbtiAxes: ['IE'],
     enneagram: ['5', '9'],
@@ -475,7 +475,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_09',
-    text_ko: '나는 사람 앞에서 활발하게 말해도, 중요한 결론은 혼자 있을 때 더 잘 정리되는 편인가요?',
+    text_ko: '나는 사람들 앞에서는 활발히 말해도, 중요한 결론은 혼자 있을 때 더 잘 정리되는 편인가요?',
     rationale_short: '겉/속 처리 경로 분리 검증',
     mbtiAxes: ['IE'],
     enneagram: ['5', '7'],
@@ -521,7 +521,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_07',
-    text_ko: '나는 즉흥적으로 보이는 날에도 중요한 결정은 기준표를 다시 확인하는 편인가요?',
+    text_ko: '나는 즉흥적으로 행동한 날에도, 중요한 결정은 기준을 다시 확인하는 편인가요?',
     rationale_short: '즉흥/기준 분리 검증',
     mbtiAxes: ['JP'],
     enneagram: ['6', '1'],
@@ -536,7 +536,7 @@ const QUESTION_BANK: Question[] = [
   }),
   buildQuestion({
     id: 'bank_c_08',
-    text_ko: '나는 겉으로는 맞춰도 결론은 내 기준과 근거가 맞아야 선택하는 편인가요?',
+    text_ko: '나는 겉으로 맞춰 주더라도, 최종 선택은 내 기준과 근거가 맞아야 하는 편인가요?',
     rationale_short: '판단 고정성 검증',
     mbtiAxes: ['TF'],
     enneagram: ['1', '8'],
