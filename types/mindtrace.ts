@@ -25,6 +25,7 @@ export type MbtiType = (typeof MBTI_TYPES)[number]
 export type EnneagramType = (typeof ENNEAGRAM_TYPES)[number]
 export type MbtiAxis = (typeof MBTI_AXES)[number]
 export type YesNo = 'yes' | 'no'
+export type HesitationReason = 'ambiguous_meaning' | 'did_other_tasks'
 
 export type QuestionPhase = 'A' | 'B' | 'C'
 export type QuestionContext = 'work' | 'private' | 'daily'
@@ -116,6 +117,12 @@ export interface AnswerRecord {
   answer: YesNo
   answeredAt: string
   targets: QuestionTargets
+  meta?: {
+    dwellMs?: number
+    hesitationReason?: HesitationReason
+    deferred?: boolean
+    confidenceWeight?: number
+  }
 }
 
 export interface TypeCandidate<T extends string = string> {
@@ -144,6 +151,7 @@ export interface StopCheckDecision {
     | 'threshold_met'
     | 'phase_not_ready'
     | 'validation_incomplete'
+    | 'axis_coverage_low'
   snapshot: StopSnapshot
   metrics: {
     answerCount: number
@@ -158,11 +166,14 @@ export interface StopCheckDecision {
     phase?: QuestionPhase
     validationCount?: number
     requiredValidationCount?: number
+    axisCoverageScore?: number
+    axisBalanceScore?: number
   }
 }
 
 export interface QuestionSelectionBreakdown {
   axisUncertainty: number
+  axisCoverageNeed: number
   mbtiSplit: number
   enneaSplit: number
   noveltyPenalty: number
@@ -182,6 +193,28 @@ export interface QuestionSelectionResult {
   phase: QuestionPhase
   reason: string
   ranked: QuestionSelectionCandidate[]
+}
+
+
+export interface AxisNarrativeItem {
+  axis: MbtiAxis
+  leaning: string
+  confidence: number
+  summary: string
+}
+
+export interface ResponseEvidenceItem {
+  question: string
+  answer: YesNo
+  interpretation: string
+  impact: string
+}
+
+export interface DeepInsights {
+  responsePatternSummary: string
+  axisNarratives: AxisNarrativeItem[]
+  evidenceHighlights: ResponseEvidenceItem[]
+  confidenceCommentary: string
 }
 
 export interface FinalReport {
@@ -210,6 +243,7 @@ export interface FinalReport {
   narrative_ko: string
   misperception_ko: string
   short_caption_ko: string
+  deepInsights?: DeepInsights
   style_tags: {
     quadra: 'NT' | 'ST' | 'NF' | 'SF'
     tone: 'C'
@@ -285,6 +319,7 @@ export interface FinalizeModelOutput {
   narrative_ko: string
   misperception_ko: string
   short_caption_ko: string
+  deepInsights?: DeepInsights
   style_tags: {
     quadra: 'NT' | 'ST' | 'NF' | 'SF'
     tone: 'C'

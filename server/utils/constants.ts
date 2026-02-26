@@ -8,10 +8,10 @@ export const AXIS_LETTERS: Record<MbtiAxis, [string, string]> = {
 }
 
 export const EARLY_STOP = {
-  mbtiTop1: 0.65,
-  mbtiGap: 0.18,
-  enneaTop1: 0.55,
-  enneaGap: 0.12
+  mbtiTop1: 0.63,
+  mbtiGap: 0.16,
+  enneaTop1: 0.53,
+  enneaGap: 0.1
 }
 
 export const BASE_CURATED_QUESTION_COUNT = 6

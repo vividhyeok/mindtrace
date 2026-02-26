@@ -31,12 +31,21 @@ const loading = ref(true)
 const answering = ref(false)
 const finalizing = ref(false)
 const errorMessage = ref('')
+const infoMessage = ref('')
 const sessionId = ref('')
 const currentQuestion = ref<PublicQuestion | null>(null)
 const progress = ref({ current: 0, max: 20, ratio: 0 })
 const resumeSnapshot = ref<SessionSnapshot | null>(null)
 const selectedAnswer = ref<'yes' | 'no' | null>(null)
 const authIssue = ref<AuthIssueState | null>(null)
+const canUndo = computed(() => progress.value.current > 0 && !answering.value && !finalizing.value)
+const questionStartedAt = ref<number>(Date.now())
+const previousDwellMs = ref<number>(0)
+const pendingAnswer = ref<'yes' | 'no' | null>(null)
+const longStayDecision = ref<{ open: boolean, dwellMs: number }>({ open: false, dwellMs: 0 })
+const hesitationReason = ref<'ambiguous_meaning' | 'did_other_tasks'>('ambiguous_meaning')
+const deferScoring = ref(false)
+const forceHesitationPrompt = ref(false)
 
 const progressVisual = computed(() => {
   return Math.min(94, 14 + progress.value.current * 6)
@@ -107,6 +116,7 @@ const startSession = async () => {
   clientSession.setSessionId(data.sessionId)
   currentQuestion.value = data.firstQuestion
   progress.value = { current: 0, max: data.maxQuestions, ratio: 0 }
+  questionStartedAt.value = Date.now()
 }
 
 const finalizeNow = async () => {
@@ -139,6 +149,7 @@ const applySnapshot = async (snapshot: SessionSnapshot) => {
   clientSession.setSessionId(snapshot.sessionId)
   progress.value = snapshot.progress
   currentQuestion.value = snapshot.currentQuestion || null
+  questionStartedAt.value = Date.now()
 
   if (snapshot.finalized) {
     await navigateTo({ path: '/result', query: { sessionId: snapshot.sessionId } })
@@ -255,6 +266,35 @@ const reenterInviteCode = async () => {
 const submitAnswer = async (answer: 'yes' | 'no') => {
   if (!currentQuestion.value || answering.value || finalizing.value) return
 
+  const dwellMs = Date.now() - questionStartedAt.value
+  const exceededAbsolute = dwellMs >= 12000
+  const exceededRelative = previousDwellMs.value > 0 && dwellMs >= Math.round(previousDwellMs.value * 1.25)
+  const firstLongDwell = previousDwellMs.value === 0 && exceededAbsolute
+
+  if ((exceededAbsolute && exceededRelative) || firstLongDwell || forceHesitationPrompt.value) {
+    pendingAnswer.value = answer
+    longStayDecision.value = { open: true, dwellMs }
+    hesitationReason.value = 'ambiguous_meaning'
+    deferScoring.value = false
+    forceHesitationPrompt.value = false
+    return
+  }
+
+  await submitAnswerWithMeta(answer, {
+    dwellMs
+  })
+}
+
+const submitAnswerWithMeta = async (
+  answer: 'yes' | 'no',
+  meta: {
+    dwellMs: number
+    hesitationReason?: 'ambiguous_meaning' | 'did_other_tasks'
+    deferScoring?: boolean
+  }
+) => {
+  if (!currentQuestion.value || answering.value || finalizing.value) return
+
   answering.value = true
   authIssue.value = null
   selectedAnswer.value = answer
@@ -264,9 +304,11 @@ const submitAnswer = async (answer: 'yes' | 'no') => {
     const result = await api.post<AnswerResponse>('/api/answer', {
       sessionId: sessionId.value,
       questionId: currentQuestion.value.id,
-      answer
+      answer,
+      meta
     }, { authBehavior: 'stay' })
 
+    previousDwellMs.value = meta.dwellMs
     progress.value = result.progress
 
     if (result.done) {
@@ -276,12 +318,66 @@ const submitAnswer = async (answer: 'yes' | 'no') => {
     }
 
     currentQuestion.value = result.nextQuestion || null
+    questionStartedAt.value = Date.now()
   }
   catch (error: any) {
     if (applyAuthIssue(error)) {
       return
     }
     errorMessage.value = error?.data?.statusMessage || '응답 처리 중 오류가 발생했습니다.'
+  }
+  finally {
+    answering.value = false
+    selectedAnswer.value = null
+  }
+}
+
+const confirmLongStayDecision = async () => {
+  if (!pendingAnswer.value || !longStayDecision.value.open) return
+
+  longStayDecision.value.open = false
+
+  await submitAnswerWithMeta(pendingAnswer.value, {
+    dwellMs: longStayDecision.value.dwellMs,
+    hesitationReason: hesitationReason.value,
+    deferScoring: deferScoring.value
+  })
+
+  pendingAnswer.value = null
+}
+
+const cancelLongStayDecision = () => {
+  longStayDecision.value.open = false
+  pendingAnswer.value = null
+}
+
+const requestHesitationReview = () => {
+  forceHesitationPrompt.value = true
+  infoMessage.value = '다음 응답 시 애매함/유보 여부를 먼저 확인할게요.'
+}
+
+const undoLastAnswer = async () => {
+  if (!sessionId.value || !canUndo.value) return
+
+  answering.value = true
+  errorMessage.value = ''
+  infoMessage.value = ''
+
+  try {
+    const result = await api.post<AnswerResponse>('/api/undo', {
+      sessionId: sessionId.value
+    }, { authBehavior: 'stay' })
+
+    progress.value = result.progress
+    currentQuestion.value = result.nextQuestion || null
+    questionStartedAt.value = Date.now()
+    infoMessage.value = '이전 답변으로 돌아왔어요. 답변을 다시 선택해 주세요.'
+  }
+  catch (error: any) {
+    if (applyAuthIssue(error)) {
+      return
+    }
+    errorMessage.value = error?.data?.statusMessage || '이전 응답으로 돌아가지 못했습니다.'
   }
   finally {
     answering.value = false
@@ -345,6 +441,26 @@ onMounted(async () => {
             <p class="mb-2 text-xs font-bold text-ink/60">질문 {{ progress.current + 1 }}</p>
             <p class="text-xl font-bold leading-8 sm:text-2xl">{{ currentQuestion.text_ko }}</p>
 
+            <div class="mt-4">
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <BaseButton
+                  variant="ghost"
+                  class="w-full"
+                  :disabled="!canUndo"
+                  @click="undoLastAnswer"
+                >
+                  이전 질문으로 돌아가기
+                </BaseButton>
+                <BaseButton
+                  variant="ghost"
+                  class="w-full"
+                  @click="requestHesitationReview"
+                >
+                  질문이 애매해요
+                </BaseButton>
+              </div>
+            </div>
+
             <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <BaseButton
                 variant="secondary"
@@ -371,6 +487,32 @@ onMounted(async () => {
             <p class="mt-4 text-xs font-bold text-ink/60">
               중립 없이 지금 더 끌리는 쪽을 선택해 주세요.
             </p>
+
+            <div v-if="longStayDecision.open" class="mt-4 rounded-3xl border border-white/80 bg-white p-4">
+              <p class="text-sm font-bold text-ink/90">이전 질문보다 오래 머문 것으로 감지됐어요.</p>
+              <p class="mt-1 text-sm text-ink/75">이유를 선택하면 반영 강도를 조정할 수 있어요.</p>
+
+              <div class="mt-3 grid gap-2">
+                <label class="rounded-2xl bg-lilac/40 px-3 py-2 text-sm font-semibold">
+                  <input v-model="hesitationReason" type="radio" value="ambiguous_meaning" class="mr-2">
+                  질문이 무슨 뜻인지 해석이 애매했어요
+                </label>
+                <label class="rounded-2xl bg-lilac/40 px-3 py-2 text-sm font-semibold">
+                  <input v-model="hesitationReason" type="radio" value="did_other_tasks" class="mr-2">
+                  다른 일을 처리하다가 늦어졌어요
+                </label>
+              </div>
+
+              <label class="mt-3 flex items-center gap-2 text-sm font-semibold text-ink/80">
+                <input v-model="deferScoring" type="checkbox">
+                이 질문은 판단을 유보하고 약하게만 반영
+              </label>
+
+              <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <BaseButton variant="secondary" @click="confirmLongStayDecision">선택 반영하고 계속</BaseButton>
+                <BaseButton variant="ghost" @click="cancelLongStayDecision">취소</BaseButton>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -383,6 +525,10 @@ onMounted(async () => {
 
         <div v-if="errorMessage" class="mt-4 rounded-3xl bg-[#ffe0ec] px-4 py-3 text-sm font-bold text-[#b93b64]">
           {{ errorMessage }}
+        </div>
+
+        <div v-if="infoMessage" class="mt-4 rounded-3xl bg-white/85 px-4 py-3 text-sm font-bold text-ink/80">
+          {{ infoMessage }}
         </div>
       </div>
     </section>

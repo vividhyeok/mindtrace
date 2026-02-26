@@ -172,12 +172,14 @@ const resolveAnswerDelta = (question: Question, answer: YesNo) => {
 export const applyAnswerToDistribution = (
   distribution: DistributionState,
   question: Question,
-  answer: YesNo
+  answer: YesNo,
+  confidenceWeight = 1
 ): DistributionState => {
+  const safeWeight = Math.max(0, Math.min(1, confidenceWeight || 0))
   const { mbtiDelta, enneaDelta } = resolveAnswerDelta(question, answer)
 
   for (const axis of Object.keys(mbtiDelta) as MbtiAxis[]) {
-    const delta = Number(mbtiDelta[axis] || 0)
+    const delta = Number(mbtiDelta[axis] || 0) * safeWeight
     distribution.axisScores[axis] += delta
 
     if (delta > 0) {
@@ -189,7 +191,7 @@ export const applyAnswerToDistribution = (
   }
 
   for (const ennea of Object.keys(enneaDelta) as EnneagramType[]) {
-    const delta = Number(enneaDelta[ennea] || 0)
+    const delta = Number(enneaDelta[ennea] || 0) * safeWeight
     distribution.enneagramScores[ennea] += delta
   }
 
@@ -292,6 +294,27 @@ interface StopRuntimeOptions {
   requiredValidationCount?: number
 }
 
+const computeAxisCoverageScore = (distribution: DistributionState) => {
+  const coverage = MBTI_AXES.map((axis) => {
+    const evidence = distribution.axisEvidence[axis]
+    const total = (evidence?.positive || 0) + (evidence?.negative || 0)
+    return Math.min(1, total / 3)
+  })
+  return coverage.reduce((acc, value) => acc + value, 0) / coverage.length
+}
+
+const computeAxisBalanceScore = (distribution: DistributionState) => {
+  const balance = MBTI_AXES.map((axis) => {
+    const evidence = distribution.axisEvidence[axis]
+    const positive = evidence?.positive || 0
+    const negative = evidence?.negative || 0
+    const total = positive + negative
+    if (total === 0) return 0
+    return 1 - Math.abs(positive - negative) / total
+  })
+  return balance.reduce((acc, value) => acc + value, 0) / balance.length
+}
+
 export const shouldStop = (
   distribution: DistributionState,
   answerCount: number,
@@ -306,6 +329,8 @@ export const shouldStop = (
   const conflictCount = distribution.conflicts.length
   const validationCount = options.validationCount || 0
   const requiredValidationCount = options.requiredValidationCount || 0
+  const axisCoverageScore = computeAxisCoverageScore(distribution)
+  const axisBalanceScore = computeAxisBalanceScore(distribution)
 
   const metrics = {
     answerCount,
@@ -319,7 +344,9 @@ export const shouldStop = (
     stabilityScore,
     phase: options.phase,
     validationCount,
-    requiredValidationCount
+    requiredValidationCount,
+    axisCoverageScore,
+    axisBalanceScore
   }
 
   if (answerCount >= maxQuestions) {
@@ -389,11 +416,21 @@ export const shouldStop = (
     }
   }
 
-  if (stabilityScore < 0.62) {
+  if (stabilityScore < 0.58) {
     return {
       done: false,
       reason: 'continue',
       detail: 'unstable',
+      snapshot,
+      metrics
+    }
+  }
+
+  if (axisCoverageScore < 0.72 || axisBalanceScore < 0.34) {
+    return {
+      done: false,
+      reason: 'continue',
+      detail: 'axis_coverage_low',
       snapshot,
       metrics
     }

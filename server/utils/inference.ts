@@ -132,6 +132,43 @@ const finalizeSchema = {
     narrative_ko: { type: 'string' },
     misperception_ko: { type: 'string' },
     short_caption_ko: { type: 'string' },
+    deepInsights: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        responsePatternSummary: { type: 'string' },
+        axisNarratives: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              axis: { type: 'string', enum: ['IE', 'SN', 'TF', 'JP'] },
+              leaning: { type: 'string' },
+              confidence: { type: 'number' },
+              summary: { type: 'string' }
+            },
+            required: ['axis', 'leaning', 'confidence', 'summary']
+          }
+        },
+        evidenceHighlights: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              question: { type: 'string' },
+              answer: { type: 'string', enum: ['yes', 'no'] },
+              interpretation: { type: 'string' },
+              impact: { type: 'string' }
+            },
+            required: ['question', 'answer', 'interpretation', 'impact']
+          }
+        },
+        confidenceCommentary: { type: 'string' }
+      },
+      required: ['responsePatternSummary', 'axisNarratives', 'evidenceHighlights', 'confidenceCommentary']
+    },
     style_tags: {
       type: 'object',
       additionalProperties: false,
@@ -365,6 +402,21 @@ const extractEnneaCore = (value: string): EnneaCore => {
   return '5'
 }
 
+const axisLabelMap: Record<string, string> = {
+  IE: '에너지 방향(I/E)',
+  SN: '정보 처리(S/N)',
+  TF: '판단 기준(T/F)',
+  JP: '생활 리듬(J/P)'
+}
+
+const describeAxisLeaning = (axis: string, score: number) => {
+  const strong = Math.abs(score) >= 0.92
+  if (axis === 'IE') return score >= 0 ? (strong ? '내향 우세' : '내향 약우세') : (strong ? '외향 우세' : '외향 약우세')
+  if (axis === 'SN') return score >= 0 ? (strong ? '감각 우세' : '감각 약우세') : (strong ? '직관 우세' : '직관 약우세')
+  if (axis === 'TF') return score >= 0 ? (strong ? '사고 우세' : '사고 약우세') : (strong ? '감정 우세' : '감정 약우세')
+  return score >= 0 ? (strong ? '계획 우세' : '계획 약우세') : (strong ? '탐색 우세' : '탐색 약우세')
+}
+
 const summarizeRecentAnswers = (session: SessionState, limit = 10) => {
   const questionMap = new Map(session.questionHistory.map(question => [question.id, question]))
 
@@ -376,7 +428,10 @@ const summarizeRecentAnswers = (session: SessionState, limit = 10) => {
       text_ko: question?.text_ko || '',
       targets: question?.targets || answer.targets,
       context: question?.meta?.context || 'daily',
-      mode: question?.meta?.mode || 'axis_scan'
+      mode: question?.meta?.mode || 'axis_scan',
+      hesitationReason: answer.meta?.hesitationReason || null,
+      deferred: Boolean(answer.meta?.deferred),
+      confidenceWeight: answer.meta?.confidenceWeight || 1
     }
   })
 }
@@ -430,6 +485,19 @@ const fallbackReport = (session: SessionState): FinalReport => {
   ].join(' ')
 
   const outerVsInner = ensureOuterPrefix(quadraProfile.outerVsInner)
+  const recentAnswers = summarizeRecentAnswers(session, 8)
+  const axisNarratives = (Object.entries(session.distribution.axisScores) as Array<[string, number]>).map(([axis, score]) => ({
+    axis: axis as 'IE' | 'SN' | 'TF' | 'JP',
+    leaning: describeAxisLeaning(axis, score),
+    confidence: round3(Math.min(1, Math.abs(score) / 1.5)),
+    summary: `${axisLabelMap[axis]}에서 ${describeAxisLeaning(axis, score)} 신호가 반복되었습니다.`
+  }))
+  const evidenceHighlights = recentAnswers.slice(-4).map(item => ({
+    question: item.text_ko,
+    answer: item.answer === '그렇다' ? 'yes' as const : 'no' as const,
+    interpretation: item.answer === '그렇다' ? '해당 성향을 직접 지지하는 응답입니다.' : '반대 선호를 확인하는 보정 응답입니다.',
+    impact: `${item.targets.mbtiAxes.join('/')} 축 및 ${item.targets.enneagram.join(', ')} 성향 판별에 반영됨`
+  }))
 
   return {
     sessionId: session.id,
@@ -457,6 +525,12 @@ const fallbackReport = (session: SessionState): FinalReport => {
     narrative_ko: quadraProfile.corePattern,
     misperception_ko: outerVsInner,
     short_caption_ko: clampCaption(`mindtrace 결과: ${topMbti} · ${wing}. ${summaryShort}`),
+    deepInsights: {
+      responsePatternSummary: '후반 응답에서도 초기 경향이 크게 흔들리지 않아 동일한 판단 프레임이 유지되었습니다.',
+      axisNarratives,
+      evidenceHighlights,
+      confidenceCommentary: `응답 수 ${session.answers.length}개 기준으로 상위 후보 간 격차와 안정성을 함께 검토했습니다.`
+    },
     style_tags: {
       quadra,
       tone: 'C'
@@ -540,7 +614,12 @@ export const finalizeWithModel = async (
     '- short_caption_ko는 공유용으로 1~2문장으로 짧게 유지',
     '- mbti.candidates / enneagram.candidates 확률은 입력 분포와 크게 어긋나지 않게 작성',
     '- enneagram.top은 wing 형태(예: 5w6)로 작성',
-    '- nickname_ko는 은유 기반이되 과장 없이 간결하게 작성'
+    '- nickname_ko는 은유 기반이되 과장 없이 간결하게 작성',
+    '- deepInsights.responsePatternSummary: 4~6문장',
+    '- deepInsights.axisNarratives: 4개 축 모두 포함, confidence는 0~1',
+    '- deepInsights.evidenceHighlights: 최근 답변 중 4~6개를 인용해서 질문/응답/해석/영향을 작성',
+    '- deepInsights.confidenceCommentary: 3~5문장으로 신뢰도/한계/추가 확인 포인트 정리',
+    '- hesitationReason/deferred/confidenceWeight가 있는 답변은 모든 유형 해석에서 공통적으로 "판단 유보" 또는 "해석 난이도" 신호로 반영 강도를 구분'
   ].join('\n')
 
   const model = await requestO3Json<FinalizeModelOutput>({
@@ -568,6 +647,7 @@ export const finalizeWithModel = async (
       narrative_ko: fallback.narrative_ko,
       misperception_ko: fallback.misperception_ko,
       short_caption_ko: fallback.short_caption_ko,
+      deepInsights: fallback.deepInsights,
       style_tags: fallback.style_tags
     })
   })
@@ -605,6 +685,8 @@ export const finalizeWithModel = async (
   const safeMisperception = ensureOuterPrefix(
     ensureText(model.misperception_ko, safeOuterVsInner)
   )
+  const safeDeepInsights = model.deepInsights || fallback.deepInsights
+
   const safeCaption = clampCaption(
     ensureText(
       model.short_caption_ko,
@@ -644,6 +726,7 @@ export const finalizeWithModel = async (
     narrative_ko: safeNarrative,
     misperception_ko: safeMisperception,
     short_caption_ko: safeCaption,
+    deepInsights: safeDeepInsights,
     style_tags: {
       quadra: ['NT', 'ST', 'NF', 'SF'].includes(resolvedQuadra)
         ? resolvedQuadra
