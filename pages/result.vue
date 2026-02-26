@@ -306,7 +306,7 @@ onMounted(async () => {
           </section>
 
           <section v-if="report.deepInsights" class="rounded-3xl bg-white/92 p-4 sm:p-5">
-            <h2 class="mb-2 text-base font-extrabold">응답 근거 요약</h2>
+            <h2 class="mb-2 text-base font-extrabold">심층 분석 요약</h2>
             <p class="text-sm leading-7 sm:text-base">{{ report.deepInsights.responsePatternSummary }}</p>
 
             <div class="mt-4 overflow-x-auto">

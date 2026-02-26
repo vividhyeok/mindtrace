@@ -351,7 +351,7 @@ const QUESTION_BANK: Question[] = [
   buildQuestion({
     id: 'bank_b_10',
     text_ko: '나는 아이디어 토론이 길어질수록 오히려 생각이 더 선명해지는 편인가요?',
-    rationale_short: 'IE 토론 에너지 확인',
+    rationale_short: 'IE 발화 에너지 확인',
     mbtiAxes: ['IE'],
     enneagram: ['7', '3'],
     mode: 'tie_break',
